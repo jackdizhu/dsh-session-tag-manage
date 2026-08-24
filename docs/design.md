@@ -20,13 +20,14 @@ dsh-session-tagger/
 ├── cordis.yml              # 本地开发时的 patch 注册
 ├── README.md
 ├── src/
-│   ├── index.ts            # 宿主侧入口：apply(ctx, config)
-│   ├── config.ts           # 配置 Schema
-│   ├── events.ts           # 自定义 SessionEventMap 声明合并
-│   ├── tagger.ts           # 核心逻辑：计时 + 提取 + 分析
-│   ├── projection.ts       # SessionProjection 注册
+│   ├── index.ts            # 宿主侧入口：apply(ctx, config)，事件监听与计时编排
+│   ├── config.ts           # 配置 Schema（Schemastery）
+│   ├── events.ts           # 自定义 SessionEventMap 声明合并（session-tag/assigned）
+│   ├── tagger.ts           # 核心逻辑：计时 + 内容提取 + LLM 兜底判定
+│   ├── rules.ts            # 规则判定器（纯函数）：abnormal / waiting / todo 推断
+│   ├── projection.ts       # SessionProjection 注册（纯同步 fold + Zod schema）
 │   └── client/
-│       └── index.ts        # 客户端插件：背景色渲染
+│       └── index.ts        # 客户端插件：背景色渲染（slots + useSessionProjection）
 └── dist/                   # 构建产物（若打包发布）
 ```
 `src/config.ts` —— 用 `@deepseek-ai/schemastery` 定义可配置字段：
@@ -161,10 +162,10 @@ private extractLastTurn(session: Session): ExtractedContent {
 |---|---|---|
 | 异常终止 | `turn/end.reason ∈ {error, max-tokens, aborted, blocked, interrupted}` | 无需 LLM |
 | 会话等待 | 日志末尾存在 `approval/asked` 且没有配对的 `approval/decided` | 无需 LLM |
-| 会话完结 | 规则难以判定 | 判断主题任务是否全部完成、无剩余事项 |
+| 会话完结 | `todo/write` 最新快照全为 `completed` 或列表为空，且最后 turn 已 closed | 判断主题任务是否全部完成、无剩余事项 |
 | 无效会话 | 规则难以判定 | 判断是否仅为打招呼 / 输入与主题无关无法确定意图 |
-| 进行中 | 7 分钟内出现了新 `turn/start`，或最近一次 turn 仍在打开状态 | 无需 LLM |
-`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。
+| 进行中 | 7 分钟内出现新 `turn/start`，或 `todo/write` 存在 `pending`/`in_progress` 项，或 `agent/status` 为 `running` | 无需 LLM |
+`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。`todo/write`（全量快照，`status ∈ pending | in_progress | completed`）与 `agent/status`（`idle | running`）则分别是判定"完结/进行中"与"进行中"的辅助结构化信号，应一并前置到规则层。
 LLM 调用走 `ctx.llm` 服务统一接口，把提取出的最后一轮对话发给配置的 `analysisModel`：
 ```typescript
 private async analyze(session: Session) {
@@ -213,6 +214,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
      * 会话标签写入事件。whole-value 快照式：每次携带完整标签状态。
+     * 非 SurfaceEventType 的 log-only 事件：不参与派生历史，无需 SurfaceIntent。
      * @mode emit
      */
     'session-tag/assigned': {
@@ -230,6 +232,8 @@ declare module '@deepseek-ai/dsh-session/types' {
 private appendTagEvent(session: Session, tag: SessionTag, source: string) {
   session.append({
     type: 'session-tag/assigned',
+    // 信息性记录：缺失不影响日志重建，标记 ignorable
+    ignorable: true,
     data: {
       tagId: `tag-${session.id}` as TagId,
       tag, source,
@@ -323,19 +327,23 @@ export function apply(ctx: ClientContext) {
 1. `turn/end.reason` 明确为非 completed 枚举 —— 最高置信度，`interrupted` 表示用户中途取消，`error` 表示请求失败，`max-tokens` 表示截断
 2. `assistant/message` 事件带 `interrupted: true` 标记
 3. 打开的 `turn/start` 在会话关闭时没有配对的 `turn/end`（崩溃恢复场景）
-**会话等待的配对追踪**：维护一个 `Map<ApprovalRequestId, 'asked'>`，收到 `approval/decided` 时按 `id` 删除；分析时刻集合非空即判为 `waiting`。`decided` 的 `outcome` 字段还可以进一步细分（决定 / 取消 / 不可用），但标签层面统一归为"等待解除"。
+**会话等待的配对追踪**：维护一个 `Map<ApprovalRequestId, 'asked'>`，收到 `approval/decided` 时按 `id` 删除；分析时刻集合非空即判为 `waiting`。`decided` 的 `outcome` 取官方枚举 `allowed-once / rejected / cancelled / unavailable`（仅 `allowed-once` 是放行），非 `allowed-once` 表示"等待已解除但未放行"，标签层面统一归为"等待解除"。审批审计事件由 `ctx.approval`（dsh-user-approval 包）成对追加，属 log-only、不进模型转录。
 ## 十、打包发布与验证
 打包成标准插件包，`package.json` 加 `dsh-plugin` 声明后可发布到社区：
 ```json
 {
-  "name": "dsh-session-tagger",
+  "name": "dsh-session-tag-manage",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.ts",
-  "dsh": { "clientEntry": "src/client/index.ts" }
+  "files": ["src", "cordis.yml"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.yml" },
+    "client": "./src/client/index.ts"
+  }
 }
 ```
-安装：`dsh plugin --profile web add dsh-session-tagger`
+安装：`dsh plugin --profile web add dsh-session-tag-manage`
 **验证路径**建议按事件链自底向上：
 1. 发一条会触发权限审批的指令（如写文件），确认 `waiting` 标签在 7 分钟后出现
 2. 中途 ESC 取消一个轮次，确认立即出现 `abnormal_end`
@@ -344,4 +352,59 @@ export function apply(ctx: ClientContext) {
 5. 刷新页面，确认背景色从投影恢复（验证持久化 + 客户端冷读）
 ---
 **几个关键工程决策的取舍**：7 分钟用 `setTimeout` 而不是 cron，是因为它天然随插件生命周期回收，且用 `ctx.effect` 包裹后能与 Fiber 状态机联动；标签写进 SessionEvent 而不是独立存储，是为了让 Fork / Resume / 回放场景下标签语义自动一致，不产生"差不多正确"的第二份状态——这正是 DSH Session Log 设计哲学的直接受益；规则前置 + LLM 兜底的混合判定，则是在准确性、延迟、Token 成本之间的平衡点，如果后续发现 LLM 判"无效会话"的准确率不足，可以把 `approval` 配对检测这类结构化规则继续前置。
+
+---
+
+## 十一、官方 API 核对与校准记录
+
+本设计在落地前对照 DeepSeek Harness 官方插件文档（[develop/basic](https://deepseek-harness.github.io/deepseek-harness/develop/basic/)）与 GitHub 源码逐项核对，校准结论如下：
+
+| 设计稿写法 | 官方真实契约 | 状态 |
+|---|---|---|
+| `ctx.on('session/event')` + 检查 `event.type` | 官方："`turn/*`、`step/*`、`tool/call` 等是持久会话事件，不是同名 Cordis 事件，监听 `session/event` 并检查 `event.type`" | ✅ 正确 |
+| `turn/end.data.reason` 枚举 | `TurnEndReason`：`completed / error / max-tokens / aborted / blocked / interrupted` | ✅ 正确 |
+| `SessionEventMap` 声明合并扩展 | merge-extensible 类型表，插件经 declaration merging 加变体 | ✅ 正确 |
+| `approval/asked` / `approval/decided` 配对判等待 | 真实存在：`ctx.approval`（dsh-user-approval）成对追加，`ApprovalRequestId` 配对，log-only 审计事件、不进模型转录 | ✅ 正确 |
+| `ctx.sessionProjections.register({key,schema,stateVersion,init,apply,view})` | `ProjectionDefinition` 签名吻合；`schema` 为 **Zod**；`apply` 须同步且对无关事件返回同一引用；`state` 须纯 JSON | ✅ 正确 |
+| `ctx.llm.chat({model,messages})` | `ctx.llm` 服务存在，确切方法名未核实，实现前查 `@deepseek-ai/dsh-llm` 类型 | ⚠️ 待定 |
+| package.json `dsh.clientEntry` | 官方字段为 `dsh.bundle.patch`（组合包）+ `dsh.client`（浏览器端插件声明） | ❌ 已修正 |
+| 客户端槽位渲染 | `packages/client`：shell / wire / object services / **slots** / ui-* 插件；"渲染属于槽位系统" | ✅ 正确 |
+| 投影推送方 | `dsh-host-apiproxy` 的 history tail + `session/projection` push frame | ✅ 正确 |
+
+**本设计新增利用的官方信号（此前未纳入）**：
+1. **`todo/write` 事件**：全量快照 `TodoItem[]`，`status ∈ pending | in_progress | completed` —— 判定"进行中 vs 完结"的结构化权威信号，前置到规则层，减少 LLM 依赖。
+2. **`agent/status` Cordis 事件**（`idle | running`）：`running` 覆盖驱动器排空区间，作为"进行中"的实时辅助信号。
+
+**落地注意事项**：
+- 自定义 `session-tag/assigned` 属非 `SurfaceEventType` 的 log-only 事件，无需 `SurfaceIntent`；信息性记录应置 `ignorable: true`（本设计已加）。
+- 投影 `view()` 输出须过 Zod 校验；`apply` 对无关事件必须返回同一状态引用（`Object.is` 相等才产生零下游工作）。
+- 客户端槽位路径（`sidebar.session.item`）与 `dsh.client` 字段格式需按目标 dsh 版本核对（当前 0.1.0-rc.x ~ 0.1.1-rc.1，官方预告破坏性变更，投影 API 已在 rc.1 升级过）。
+
+## 十二、关键决策与方案选型
+
+### 总体实现方案（三选一）
+
+| 方案 | 思路 | 优点 | 缺点 | 结论 |
+|---|---|---|---|---|
+| A 纯事件 + 侧栏 class | 不注册投影，客户端从事件流读标签 | 依赖最少 | 违背"客户端只收成品值"哲学；冷读/刷新背景色缺失；与官方机制割裂 | ✗ |
+| **B 投影 + 槽位（推荐）** | 写事件 → `ctx.sessionProjections` 纯同步 fold → `session/projection` 推帧 → 客户端 slots | 与官方设计一致；缓存持久化 + 冷读恢复免费；unit 卸载自动清理；headless 无 registry 时自动不挂载 | 链路多一环，需 `inject: ['sessionProjections']`；`view` 必须同步 | ✅ |
+| C 独立存储标签 | 标签存独立 KV/文件，走自定义 HTTP 路由 | 读写直观 | 违背日志唯一真源；Fork/Resume 语义不一致；需自建持久化 | ✗ |
+
+### 决策 1：标签判定策略 —— 规则前置 + LLM 兜底（推荐）
+结构化信号全走规则（abnormal / waiting / todo 推断），LLM 只判规则判不了的 `completed` / `invalid` / `in_progress`，JSON 约束输出枚举。兼顾准确率、延迟与 Token 成本。
+
+### 决策 2："会话等待"信号 —— 审计事件配对为主、ask-user 为辅（推荐）
+- 主：分析时刻扫日志，`approval/asked` 无配对 `approval/decided` 即 `waiting`（可回放、幂等）。
+- 辅：`tool-ask-user` 产生的用户确认请求合并进 `waiting` 判定，覆盖需求中"等待用户确认继续 / 是否继续"。
+- 备选：监听 `approval/request` 瀑布事件实时置 `waiting`，但属非持久事件、重启丢失。
+
+### 决策 3：计时管理 —— 重置式 setTimeout + ctx.effect（推荐）
+每次 `turn/end(completed)` 重置 7 分钟；`turn/start` 取消旧计时并回 `in_progress`；异常 reason 即时标记不等计时。`ctx.effect` 托管生命周期，卸载自动回收，不产生幽灵回调。
+
+### 决策 4：Web UI 渲染 —— 槽位注入 + CSS class（推荐）
+客户端 `ctx.slots.inject('sidebar.session.item')` + `useSessionProjection('session-tag')`，给列表项挂 `stag-*` class；异常红、等待橙 `!important` 强调。
+
+### 决策 5：打包与分发 —— 先本地 patch，后 bundle
+- 开发期：`cordis.yml` + `--patch`（绝对路径引用 src）。
+- 分发：`package.json` 声明 `dsh.bundle.patch`（宿主）+ `dsh.client`（浏览器端），`dsh plugin --profile web add ./dsh-session-tag-manage`。
 
