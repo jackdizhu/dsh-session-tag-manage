@@ -28,7 +28,7 @@ dsh-session-tag-manage/
 │   ├── projection.ts       # SessionProjection 注册（纯同步 fold + Zod schema）
 │   ├── override.ts         # 宿主侧手动标签服务：校验 + 追加 user-override 事件
 │   └── client/
-│       ├── index.ts        # 客户端插件：背景色渲染（slots + useSessionProjection）
+│       ├── index.ts        # 客户端插件：背景色渲染（CSS 类名定位 + useProjection）
 │       ├── reminder.ts     # 客户端插件：每日 17:00 会话梳理桌面提醒（定时 + 聚焦兜底）
 │       └── tagEditor.tsx   # 客户端插件：会话标签手动编辑组件（下拉切换）
 └── dist/                   # 构建产物（若打包发布）
@@ -173,8 +173,8 @@ private extractLastTurn(session: Session): ExtractedContent {
 | 会话等待 | 日志末尾存在 `approval/asked` 且没有配对的 `approval/decided` | 无需 LLM |
 | 会话完结 | `todo/write` 最新快照全为 `completed` 或列表为空，且最后 turn 已 closed | 判断主题任务是否全部完成、无剩余事项 |
 | 无效会话 | 规则难以判定 | 判断是否仅为打招呼 / 输入与主题无关无法确定意图 |
-| 进行中 | 7 分钟内出现新 `turn/start`，或 `todo/write` 存在 `pending`/`in_progress` 项，或 `agent/status` 为 `running` | 无需 LLM |
-`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。`todo/write`（全量快照，`status ∈ pending | in_progress | completed`）与 `agent/status`（`idle | running`）则分别是判定"完结/进行中"与"进行中"的辅助结构化信号，应一并前置到规则层。
+| 进行中 | 7 分钟内出现新 `turn/start`，或 `todo/write` 存在 `pending`/`in_progress` 项；`agent/status` 为 `running` 属**未核实**辅助信号（可选） | 无需 LLM |
+`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。`todo/write`（全量快照，`status ∈ pending | in_progress | completed`）与 `agent/status`（`idle | running`，**未核实、降级为可选**）则分别是判定"完结/进行中"与"进行中"的辅助结构化信号，应一并前置到规则层。
 LLM 调用走 `ctx.llm` 服务统一接口，把提取出的最后一轮对话发给配置的 `analysisModel`：
 ```typescript
 private async analyze(session: Session) {
@@ -186,12 +186,16 @@ private async analyze(session: Session) {
     return
   }
   // 2. 规则判不了，走 LLM 语义判断（完结 / 无效 / 默认进行中）
+  // 真实 API：ctx.llm.stream(GenerateOptions): AsyncIterable<StreamChunk>，chat() 不存在
   const prompt = this.buildPrompt(extracted)
-  const result = await this.ctx.llm.chat({
+  const chunks = this.ctx.llm.stream({
+    // provider 路由必填：值按目标 dsh 版本配置（或走默认路由）
     model: this.config.analysisModel,
     messages: [{ role: 'user', content: prompt }],
   })
-  const tag = this.parseTagResult(result)
+  // 流式分片需经 BlockAssembler 组装成完整文本（组装细节按目标 dsh 版本核对）
+  const text = await assembleBlocks(chunks)
+  const tag = this.parseTagResult(text)
   this.appendTagEvent(session, tag, 'llm-based')
 }
 private applyRules(session: Session): SessionTag | null {
@@ -264,9 +268,15 @@ interface TagState {
   assignedAt: number | null
   lastActiveAt: number | null   // 最近一次会话活动时间（epoch ms，用于"当日活动"判定）
 }
+// 合并声明两个类型表（ProjectionDefinition 正确契约）：
+//  - SessionProjectionMap：客户端可见值（= wire.view 输出）
+//  - SessionProjectionStateMap：宿主 fold 状态（= apply 维护的持久化 state）
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     'session-tag': { tag: SessionTag | null; source: SessionTagSource | null; lastActiveAt: number | null }
+  }
+  interface SessionProjectionStateMap {
+    'session-tag': { tag: SessionTag | null; source: SessionTagSource | null; assignedAt: number | null; lastActiveAt: number | null }
   }
 }
 // 视为"会话活动"的事件类型：出现即刷新 lastActiveAt
@@ -277,28 +287,43 @@ const ACTIVITY_EVENTS = new Set([
 export function registerTagProjection(ctx: Context) {
   ctx.sessionProjections.register({
     key: 'session-tag',
-    schema: /* Zod schema */,
+    // 字段名是 stateSchema（校验持久化 state），不是顶层 schema
+    stateSchema: Schema.object({
+      tag: Schema.string().nullable(),
+      source: Schema.string().nullable(),
+      assignedAt: Schema.number().nullable(),
+      lastActiveAt: Schema.number().nullable(),
+    }),
     stateVersion: 3,          // view 新增 source，升版本使旧缓存失效
     init: () => ({ tag: null, source: null, assignedAt: null, lastActiveAt: null }),
     apply(state, event) {
+      // 纯同步 fold：对无关事件必须返回同一引用（Object.is 相等 → 零下游工作）
       const lastActiveAt = ACTIVITY_EVENTS.has(event.type) ? event.time : state.lastActiveAt
       if (event.type === 'session-tag/assigned') {
         return { tag: event.data.tag, source: event.data.source, assignedAt: event.data.assignedAt, lastActiveAt }
       }
-      if (lastActiveAt === state.lastActiveAt) return state  // 未变化必须返回同一引用
+      if (lastActiveAt === state.lastActiveAt) return state
       return { ...state, lastActiveAt }
     },
-    view: state => ({ tag: state.tag, source: state.source, lastActiveAt: state.lastActiveAt }),
+    // 客户端视图：wire 对象（可选）；viewSchema 校验 view() 输出，须与 SessionProjectionMap 一致
+    wire: {
+      viewSchema: Schema.object({
+        tag: Schema.string().nullable(),
+        source: Schema.string().nullable(),
+        lastActiveAt: Schema.number().nullable(),
+      }),
+      view(state) {
+        return { tag: state.tag, source: state.source, lastActiveAt: state.lastActiveAt }
+      },
+    },
   })
 }
 ```
 注册后，`dsh-host-apiproxy` 会通过 `session/projection` 推送帧把 `session-tag` 的值实时送到浏览器端。
-### 客户端侧：背景色注入
-背景色用 CSS 变量 + 主题 class 实现，通过客户端插件的槽位系统挂进会话列表项的渲染。`src/client/index.ts`：
+### 客户端侧：背景色注入（CSS 类名定位）
+> **探索结论**：会话列表项由 ui-workspace 内部渲染进 `sidebar.workspaces` 单槽，**没有逐会话行的扩展槽位**（已核对 slots.ts 与 Rows.tsx）。因此背景色渲染改用 **CSS 类名定位**：客户端只读投影成品值，遍历会话行 DOM 元素，按 `tag` 给行挂插件自有 class 并注入全局样式。`src/client/index.ts`：
 ```typescript
-import { createElement } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { useSessionProjection } from '@deepseek-ai/dsh-client-runtime/client'
 const TAG_STYLES: Record<string, { className: string; css: string }> = {
   abnormal_end: {
     className: 'stag-abnormal',
@@ -320,31 +345,25 @@ const TAG_STYLES: Record<string, { className: string; css: string }> = {
 }
 export const inject = ['slots', 'clientRuntime']
 export function apply(ctx: ClientContext) {
-  // 注入全局样式
+  // 1. 注入插件自有全局样式（不依赖 ui-workspace 内部类名，规避生产哈希化风险）
   const style = document.createElement('style')
   style.textContent = Object.values(TAG_STYLES)
-    .map(s => `.session-item.${s.className} { ${s.css} }`).join('\n')
+    .map(s => `.dsh-session-row.${s.className} { ${s.css} }`).join('\n')
   document.head.appendChild(style)
-  // 通过 useSessionProjection hook 读取标签，给会话列表项挂 class
-  ctx.slots.inject('sidebar.session.item', () => {
-    return ctx.slots.register(
-      { name: 'sidebar.session.item', key: 'session-tagger' },
-      () => {
-        const { tag, source } = useSessionProjection('session-tag')
-        const style = TAG_STYLES[tag ?? 'in_progress']
-        return createElement(Fragment, null,
-          createElement('div', { className: style.className }),
-          // 手动标签编辑入口（受 manualTagUpdateEnabled 控制），实现见 client/tagEditor.tsx
-          createElement(TagEditor, { sessionId, tag, source }),
-        )
-      },
-    )
-  })
-  // 每日 17:00 会话梳理提醒（浏览器桌面通知），实现见 client/reminder.ts
+  // 2. 读投影：客户端 hook 是 useProjection(key)，经标准槽位 kit 注入（SessionStandardProps.useProjection）
+  // 3. CSS 定位：MutationObserver 监听会话列表容器，用 data-session-id 关联行元素，
+  //    按投影 tag 给行挂 dsh-session-row.{tagClass}；投影更新后重新 apply
+  // 4. 标签编辑入口经同一定位注入（见 client/tagEditor.tsx），受 manualTagUpdateEnabled 控制
+  // 5. 每日 17:00 会话梳理提醒（浏览器桌面通知），实现见 client/reminder.ts
   setupDailyReminder(ctx, config)
 }
 ```
 异常终止（红系）和会话等待（橙系）按需求做重点视觉强调，用 `!important` 确保能覆盖主题默认背景。
+
+**CSS 类名定位的风险与缓解**（阻断点 1 决策 A）：
+- ui-workspace 内部类名生产环境 CSS-module 哈希化，**不能依赖其内部类名**；优先用会话行 `data-session-id` 属性定位，缺失时用稳定容器选择器 + 行序匹配。
+- 用 `MutationObserver` 监听列表容器增删、投影更新后重新 apply，避免渲染时序竞态。
+- 若未来 harness 提供逐会话行槽位，可平滑迁移到上游加槽位方案（方案 C）。
 ## 九、异常终止与会话等待的识别细节
 这两个重点标签的可靠性直接决定插件价值：
 **异常终止的三个信号层级**（置信度从高到低）：
@@ -399,7 +418,7 @@ export function apply(ctx: ClientContext) {
 | 方案 | 思路 | 优点 | 缺点 | 结论 |
 |---|---|---|---|---|
 | A 客户端本地汇总（推荐） | 投影扩展 `lastActiveAt`；客户端在 17:00 定时 + 聚焦兜底时，遍历会话投影本地统计并弹桌面通知 | 全部基于已验证机制（投影 + 槽位 + Notification）；无需新增宿主/推送通道 | 浏览器后台 `setTimeout` 节流可能延迟，需聚焦兜底；投影订阅范围需覆盖全部会话 | ✅ |
-| B 宿主权威计时 + 客户端拉取 | 宿主 17:00 计算摘要缓存；客户端定时/聚焦时经对象服务 RPC 拉取 | 计时可靠（Node 无节流）、数据完整 | 需验证 client→host 对象服务 RPC 机制 | 备选 |
+| B 宿主权威计时 + 客户端拉取 | 宿主 17:00 计算摘要缓存；客户端定时/聚焦时经 Typert RPC 拉取 | 计时可靠（Node 无节流）、数据完整 | 需验证 client→host Typert RPC 拉取通路 | 备选 |
 | C 宿主计算后主动推送 | 宿主 17:00 计算摘要并主动 push 到客户端 | 最实时 | 宿主→客户端通用推送通道未在文档验证，需 spike 确认 | ✗ |
 
 推荐 **A**：零未验证依赖、与"客户端只收成品值"哲学一致；若投影订阅范围不足以覆盖全部会话，或需更强实时性，再升级到 B。
@@ -434,15 +453,21 @@ desktopReminderEnabled: boolean // 浏览器桌面消息提醒开关，默认开
 
 ### 数据通路（与既有机制完全复用，零新增投影逻辑）
 ```
-Web UI 标签下拉 → 客户端调用宿主 override 服务
+Web UI 标签下拉 → 客户端经 Typert RPC 调用宿主 override 服务
   → 宿主校验（开关 / 合法标签 / 会话存在）
   → session.append(session-tag/assigned, source: 'user-override')
   → 投影 fold 新事件（whole-value 快照，后写覆盖）
-  → session/projection 推帧 → 客户端 useSessionProjection 重渲染 → 背景色同步
+  → session/projection 推帧 → 客户端 useProjection 重渲染 → 背景色同步
 ```
 - 事件写入走宿主侧，标签持久化在会话日志，重启 / 回放 / Fork 语义一致。
 - 投影是 whole-value 快照、"后写覆盖"：手动写一条 `source: 'user-override'` 事件即完成数据与 UI 同步。
 - 手动覆盖会自然影响每日 17:00 梳理统计（如把 `abnormal_end` 改为 `invalid` 后，该会话不再计入"异常"）。
+
+### 客户端→宿主写通路：Typert RPC（阻断点 2 决策 B）
+- Typert RPC 是 dsh **构建时生成**的类型化 RPC：在插件里声明 Typert contract（如 `SessionTagOverrideService.set(sessionId, tag)`），构建时生成客户端调用桩 + 宿主服务桩，避免手写协议编解码。
+- 对独立插件而言 Typert 工具链较重，但换取类型安全与宿主/客户端接口一致；`ctx.webServer` + `fetch` 的 HTTP 路由（方案 A）更轻量，但需自管鉴权/参数校验/错误映射，且不享受类型生成。
+- 实现要点：宿主注册 `sessionTagOverride` 服务实现（含开关 / 合法标签 / 会话存在校验），客户端经生成的 RPC 桩调用；构建命令与 Typert contract 语法按目标 dsh 版本核对后落地。
+
 
 ### 配置扩展
 `src/config.ts` 新增：
@@ -478,10 +503,10 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
   })
 }
 ```
-（客户端→宿主调用依赖"对象服务 RPC"机制，实现前需确认 dsh 客户端运行时调用宿主服务方法的方式——见「官方 API 核对与校准记录」章节。）
+（客户端→宿主写通路采用 Typert RPC，见上文「客户端→宿主写通路」小节；宿主侧服务实现保持上方代码形态。）
 
 ### 客户端侧：标签编辑组件（`src/client/tagEditor.tsx`）
-- 随会话列表项槽位注入：鼠标悬停显示下拉，列出 5 个合法标签，当前标签高亮；`source === 'user-override'` 时显示"手动"徽标。
+- 随会话行 CSS 定位注入（同背景色定位，见第八章）：鼠标悬停显示下拉，列出 5 个合法标签，当前标签高亮；`source === 'user-override'` 时显示"手动"徽标。
 - 切换后调用宿主 `sessionTagOverride.set(sessionId, next)`；失败（开关关闭 / 非法值 / 会话不存在）时保留原值并提示。
 - `manualTagUpdateEnabled === false` 时不渲染编辑入口。
 
@@ -513,22 +538,52 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 | `turn/end.data.reason` 枚举 | `TurnEndReason`：`completed / error / max-tokens / aborted / blocked / interrupted` | ✅ 正确 |
 | `SessionEventMap` 声明合并扩展 | merge-extensible 类型表，插件经 declaration merging 加变体 | ✅ 正确 |
 | `approval/asked` / `approval/decided` 配对判等待 | 真实存在：`ctx.approval`（dsh-user-approval）成对追加，`ApprovalRequestId` 配对，log-only 审计事件、不进模型转录 | ✅ 正确 |
-| `ctx.sessionProjections.register({key,schema,stateVersion,init,apply,view})` | `ProjectionDefinition` 签名吻合；`schema` 为 **Zod**；`apply` 须同步且对无关事件返回同一引用；`state` 须纯 JSON | ✅ 正确 |
-| `ctx.llm.chat({model,messages})` | `ctx.llm` 服务存在，确切方法名未核实，实现前查 `@deepseek-ai/dsh-llm` 类型 | ⚠️ 待定 |
+| `ctx.sessionProjections.register({key,schema,...})` | 实际字段名是 **`stateSchema`**（Zod 校验持久化 state）+ **`wire:{viewSchema,view}`**（客户端视图）；需合并声明 `SessionProjectionMap`（客户端可见值）+ `SessionProjectionStateMap`（宿主 fold 状态）两个类型表；`apply` 须同步且对无关事件返回同一引用 | ❌ 已修正 |
+| `ctx.llm.chat({model,messages})` | 不存在；真实 API 是 `ctx.llm.stream(GenerateOptions): AsyncIterable<StreamChunk>`，`GenerateOptions` 含 provider 路由 + model + `messages: Message[]`，文本经 **BlockAssembler** 组装 | ❌ 已修正 |
 | package.json `dsh.clientEntry` | 官方字段为 `dsh.bundle.patch`（组合包）+ `dsh.client`（浏览器端插件声明） | ❌ 已修正 |
-| 客户端槽位渲染 | `packages/client`：shell / wire / object services / **slots** / ui-* 插件；"渲染属于槽位系统" | ✅ 正确 |
+| 客户端槽位渲染 | `packages/client`：shell / wire / object services / **slots** / ui-* 插件；**会话列表项由 ui-workspace 渲染进 `sidebar.workspaces` 单槽，无逐会话行槽位** | ✅ 正确（无逐行槽位） |
 | 投影推送方 | `dsh-host-apiproxy` 的 history tail + `session/projection` push frame | ✅ 正确 |
 
 **本设计新增利用的官方信号（此前未纳入）**：
 1. **`todo/write` 事件**：全量快照 `TodoItem[]`，`status ∈ pending | in_progress | completed` —— 判定"进行中 vs 完结"的结构化权威信号，前置到规则层，减少 LLM 依赖。
-2. **`agent/status` Cordis 事件**（`idle | running`）：`running` 覆盖驱动器排空区间，作为"进行中"的实时辅助信号。
+2. **`agent/status` Cordis 事件**（`idle | running`）：作为"进行中"的实时辅助信号 —— **⚠️ 未核实**（源码未确认该事件存在），设计上**降级为可选**；`todo/write` + `turn/start` 已是"进行中"主信号，不依赖它。
 
 **落地注意事项**：
 - 自定义 `session-tag/assigned` 属非 `SurfaceEventType` 的 log-only 事件，无需 `SurfaceIntent`；信息性记录应置 `ignorable: true`（本设计已加）。
-- 投影 `view()` 输出须过 Zod 校验；`apply` 对无关事件必须返回同一状态引用（`Object.is` 相等才产生零下游工作）。
-- 客户端槽位路径（`sidebar.session.item`）与 `dsh.client` 字段格式需按目标 dsh 版本核对（当前 0.1.0-rc.x ~ 0.1.1-rc.1，官方预告破坏性变更，投影 API 已在 rc.1 升级过）。
+- 投影 `wire.view()` 输出须过 `viewSchema` 校验；`apply` 对无关事件必须返回同一状态引用（`Object.is` 相等才产生零下游工作）。
+- 会话列表无逐行槽位（`sidebar.workspaces` 单槽、ui-workspace 内部渲染），背景色与标签编辑入口用 **CSS 类名定位**（见第八章）；`dsh.client` 字段格式需按目标 dsh 版本核对（当前 0.1.0-rc.x ~ 0.1.1-rc.1，官方预告破坏性变更，投影 API 已在 rc.1 升级过）。
 - 客户端读取自身配置、遍历会话投影与列表的 API 需按目标 dsh 版本核对；桌面通知为标准 Web API（`Notification`），需用户授权权限。
-- 客户端→宿主的手动标签写入依赖"对象服务 RPC"（宿主 `ctx.service` 注册 + 客户端调用），为新增未核验接口，实现前需确认 dsh 客户端运行时调用宿主服务方法的方式。
+- 客户端→宿主的手动标签写入采用 **Typert RPC**（构建时生成类型化接口；宿主侧 `sessionTagOverride` 服务实现见第十二章），构建命令与 contract 语法按目标 dsh 版本核对。
+
+### 本次探索结论（2026-08-25）
+
+**已核实的契约（设计正确）**：
+
+| 设计主张 | 官方契约 | 状态 |
+|---|---|---|
+| `ctx.on('session/event')` + 检查 `event.type` | `turn/*` 是持久日志事件，非同名 Cordis 事件 | ✅ |
+| `turn/end: { turn, reason: TurnEndReason }` | 存在，6 种 reason | ✅ |
+| `SessionEventMap` 声明合并扩展 | merge-extensible 类型表 | ✅ |
+| `approval/asked`/`approval/decided` 配对 | `ApprovalRequestId` 品牌配对，`ApprovalOutcome` 闭集 | ✅ |
+| `todo/write` 全量快照 | `TodoItem[]`，3 态 status | ✅ |
+| `assistant/message` 的 `interrupted: true` | 存在 | ✅ |
+| `Session.append()` JSON 校验 | `isJsonValue` 运行时校验 | ✅ |
+| `ctx.sessions.get(id)` | 存在 | ✅ |
+| 投影注册表自动订阅 `session/event` 驱动 fold | 注册表驱动单元，插件无需自持订阅 | ✅ |
+| 客户端模块 `dsh.client` + `dsh.bundle.patch` | 两个 manifest 面 | ✅ |
+
+**需修正的 4 处（已回写正文）**：
+1. `ProjectionDefinition` 字段名 → `stateSchema` + `wire:{viewSchema,view}`，且合并声明 `SessionProjectionMap`（客户端可见值）+ `SessionProjectionStateMap`（宿主 fold 状态）。
+2. `ctx.llm.chat()` → `ctx.llm.stream(GenerateOptions)`，文本经 BlockAssembler 组装（第六章已改）。
+3. `useSessionProjection` → `useProjection(key)`，经标准槽位 kit 注入（`SessionStandardProps.useProjection`）（第八章已改）。
+4. `sidebar.session.item` 槽位不存在 → 会话列表由 ui-workspace 渲染进 `sidebar.workspaces` 单槽，无逐行槽位（第八章/决策 4 已改）。
+
+**两个阻断点决策**：
+- 阻断点 1 背景色渲染挂载点 → **CSS 类名定位**（决策 A）：DOM 定位会话行 + 插件自有 class + 全局样式；`MutationObserver` 兜底增删；规避生产哈希化。
+- 阻断点 2 客户端→宿主写通路 → **Typert RPC**（决策 B）：构建时生成类型化 RPC，宿主注册 `sessionTagOverride` 服务，客户端经生成的桩调用；工具链较重但类型安全。
+
+**未核实项**：
+- `agent/status`（`idle|running`）Cordis 事件：源码未确认，设计上**降级为可选**；"进行中"主信号由 `todo/write` + `turn/start` 承担。
 
 ## 十四、关键决策与方案选型
 
@@ -551,8 +606,8 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 ### 决策 3：计时管理 —— 重置式 setTimeout + ctx.effect（推荐）
 每次 `turn/end(completed)` 重置 7 分钟；`turn/start` 取消旧计时并回 `in_progress`；异常 reason 即时标记不等计时。`ctx.effect` 托管生命周期，卸载自动回收，不产生幽灵回调。
 
-### 决策 4：Web UI 渲染 —— 槽位注入 + CSS class（推荐）
-客户端 `ctx.slots.inject('sidebar.session.item')` + `useSessionProjection('session-tag')`，给列表项挂 `stag-*` class；异常红、等待橙 `!important` 强调。
+### 决策 4：Web UI 渲染 —— 投影 + CSS 类名定位（推荐，阻断点 1 决策 A）
+会话列表由 ui-workspace 渲染、无逐行槽位，故客户端用 `useProjection('session-tag')`（经 `SessionStandardProps` 注入）读投影成品值，DOM 定位会话行并挂插件自有 `dsh-session-row.stag-*` class；异常红、等待橙 `!important` 强调。用 `MutationObserver` 兜底行增删；生产环境 CSS-module 哈希化风险通过插件自有 class 规避。
 
 ### 决策 5：打包与分发 —— 先本地 patch，后 bundle
 - 开发期：`cordis.yml` + `--patch`（绝对路径引用 src）。
@@ -561,6 +616,6 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 ### 决策 6：每日 17:00 提醒通路 —— 客户端本地汇总 + 聚焦兜底（推荐）
 投影扩展 `lastActiveAt`，客户端在定时与 `visibilitychange`/`focus` 兜底时本地统计，用 `Notification` 弹桌面提醒；不引入未验证的宿主→客户端推送通道。宿主权威计时（方案 B）作为投影覆盖不足或需更强实时性时的升级路径。
 
-### 决策 7：手动标签更新 —— 复用投影"后写覆盖" + 锁定手动标签（推荐）
-手动改标签 = 宿主追加一条 `source: 'user-override'` 的 `session-tag/assigned` 事件，投影 whole-value 快照自动同步数据与 UI；开关 `manualTagUpdateEnabled`（默认开）在客户端隐藏入口 + 宿主拒绝写入双重生效。冲突策略选"锁定手动标签"：`source === 'user-override'` 时自动分析不覆盖，新 `turn/start` 仍重置为 `in_progress`。
+### 决策 7：手动标签更新 —— Typert RPC 写通路 + 投影"后写覆盖" + 锁定手动标签（推荐）
+写通路：客户端经 **Typert RPC**（阻断点 2 决策 B）调用宿主 `sessionTagOverride.set`，宿主校验后追加一条 `source: 'user-override'` 的 `session-tag/assigned` 事件，投影 whole-value 快照自动同步数据与 UI；开关 `manualTagUpdateEnabled`（默认开）在客户端隐藏入口 + 宿主拒绝写入双重生效。冲突策略选"锁定手动标签"：`source === 'user-override'` 时自动分析不覆盖，新 `turn/start` 仍重置为 `in_progress`。
 
