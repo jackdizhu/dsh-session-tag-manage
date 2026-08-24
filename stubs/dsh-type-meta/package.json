@@ -1,0 +1,13 @@
+{
+  "name": "@deepseek-ai/dsh-type-meta",
+  "version": "0.0.1-rc.1",
+  "description": "本地类型 stub：该包由 deepseek-harness 宿主运行时提供、未发布到 npm；此处仅为支持独立安装/typecheck 的最小占位",
+  "type": "module",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  }
+}

@@ -585,6 +585,16 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 **未核实项（本轮已补充核实并收敛）**：
 - `agent/status`（`idle|running`）：已确认真实存在（官方 `docs/defensive-patterns.md` 明示），但它是 **whole-agent 运行态**——多个 follow-up / steering / 注入任务共享一个 `running` 区间，官方明确警告**不可作为单次 follow-up / 单轮次的完成信号**。设计上**降级为可选**（不参与规则判定）；"进行中"主信号由 `todo/write` + `turn/start` 承担，语义不受影响。
 
+**新发现（2026-08-25 阶段 1 代码审查，已回写实现）**：
+
+| 事项 | 结论 |
+|---|---|
+| 自定义事件 `ignorable: true` 写入 | **受 `Session.append` API 限制暂不可达**：`dsh-session@0.1.1-rc.2` 的 `append(type, data, ...opts)` 签名仅支持非 Surface 事件空 opts，生成的事件信封（envelope）只含 `type/seq/time/data/surfaceMetadata`，无 `ignorable` 字段。`KNOWN_SESSION_EVENT_TYPES` 明示插件自定义事件不在集合内、读取路径对集合外事件**无 ignorable 标记将拒绝重建**——该拒绝逻辑当前未启用（信封校验只查结构），但未来启用后含 `session-tag/assigned` 的会话将无法重建，插件侧无任何手段设置标记。**处置**：代码按 log-only 语义写入（不影响当前功能），风险已记录，待上游提供插件事件注册 / ignorable 设置表面后补齐；spec/design 中"置 `ignorable: true`"表述同步降级为"log-only 非 Surface 语义（ignorable 受 API 限制暂不可设）"。 |
+| 规则 1 覆盖新轮次 | `applyRules` 仅查最后一个 `turn/end` reason，异常终止后用户开新轮次会被 7 分钟后回标 `abnormal_end`。**已修复**：规则 1 增加 `isLastTurnClosed(events)` 前置（最后事件为 `turn/start` 时不判 abnormal），并补回归用例。 |
+| 手动锁定被即时打标绕过 | `markImmediately` 原不检查 user-override。**已修复**：`markImmediately` 增加 `{ ignoreLock }` 选项，异常终止路径受锁保护跳过；`turn/start` 重置 `in_progress` 豁免锁定（与冲突策略 B 一致），补锁保护 / 豁免用例。 |
+| LLM 兜底异步竞态 | 计时到期后 `analyze` 异步（LLM 数秒）期间新 `turn/start` 到达会覆盖。**已修复**：`schedule` 记录 `baseSeq = session.seq`，`analyze` 写事件前比对 `logMoved`，日志已推进则放弃写入。 |
+| provider 硬编码 | `DEFAULT_PROVIDER = 'deepseek'` 写死。**已修复**：提为配置项 `analysisProvider`（默认 `deepseek`）。 |
+
 ## 十四、关键决策与方案选型
 
 ### 总体实现方案（三选一）

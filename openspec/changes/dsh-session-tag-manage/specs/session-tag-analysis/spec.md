@@ -52,7 +52,7 @@
 - **THEN** 系统调用 `ctx.llm.stream` 提交提取的最后一轮内容，解析返回的枚举作为标签写入事件
 
 ### Requirement: 标签事件持久化
-系统 SHALL 将标签写入会话日志，作为 `session-tag/assigned` 自定义事件（经 `SessionEventMap` 声明合并扩展，`ignorable: true`、whole-value 快照式携带完整标签状态），payload MUST 可 JSON 序列化，随日志回放 / Fork / 恢复语义一致。
+系统 SHALL 将标签写入会话日志，作为 `session-tag/assigned` 自定义事件（经 `SessionEventMap` 声明合并扩展，log-only 非 Surface 语义、whole-value 快照式携带完整标签状态），payload MUST 可 JSON 序列化，随日志回放 / Fork / 恢复语义一致。注：`ignorable: true` 信封标记受 `Session.append` API 限制暂不可设（`dsh-session@0.1.1-rc.2` 生成信封不含该字段），当前以 log-only 语义写入，风险记录于 docs/design.md 探索结论，待上游提供插件事件注册 / ignorable 设置表面后补齐。
 
 #### Scenario: 标签随日志持久化
 - **GIVEN** 系统为一个会话写入了 `session-tag/assigned` 事件

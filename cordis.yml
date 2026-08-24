@@ -1,0 +1,5 @@
+# 本地开发 patch 注册（路径必须写绝对路径）
+# 启动：pnpm dsh web --patch ./dsh-session-tag-manage/cordis.yml
+- insert:
+    - id: session-tagger
+      name: 'C:/global-user-data/ai-workspace/dsh-session-tag-manage/src/index.ts'
