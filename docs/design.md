@@ -15,7 +15,7 @@ flowchart LR
 ## 二、目录结构与配置定义
 推荐的目录结构：
 ```
-dsh-session-tagger/
+dsh-session-tag-manage/
 ├── package.json
 ├── cordis.yml              # 本地开发时的 patch 注册
 ├── README.md
@@ -60,9 +60,9 @@ export const Config: Schema = Schema.object({
 ```yaml
 - insert:
   - id: session-tagger
-    name: '/绝对路径/dsh-session-tagger/src/index.ts'
+    name: '/绝对路径/dsh-session-tag-manage/src/index.ts'
 ```
-启动：`pnpm dsh web --patch ./dsh-session-tagger/cordis.yml`
+启动：`pnpm dsh web --patch ./dsh-session-tag-manage/cordis.yml`
 ## 三、事件监听：识别 AI 回复结束与异常终止
 `session/event` 是唯一的日志事件入口，`turn/*` 不是同名 Cordis 事件，必须在监听器里检查 `event.type`。宿主侧入口 `src/index.ts`：
 ```typescript
