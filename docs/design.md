@@ -26,11 +26,11 @@ dsh-session-tag-manage/
 │   ├── tagger.ts           # 核心逻辑：计时 + 内容提取 + LLM 兜底判定
 │   ├── rules.ts            # 规则判定器（纯函数）：abnormal / waiting / todo 推断
 │   ├── projection.ts       # SessionProjection 注册（纯同步 fold + Zod schema）
-│   ├── override.ts         # 宿主侧手动标签服务：校验 + 追加 user-override 事件
+│   ├── override.ts         # 宿主侧 Typert RPC 服务（sessionTagOverride.set）：校验 + 追加 user-override 事件
 │   └── client/
 │       ├── index.ts        # 客户端插件：背景色渲染（CSS 类名定位 + useProjection）
 │       ├── reminder.ts     # 客户端插件：每日 17:00 会话梳理桌面提醒（定时 + 聚焦兜底）
-│       └── tagEditor.tsx   # 客户端插件：会话标签手动编辑组件（下拉切换）
+│       └── tagEditor.tsx   # 客户端插件：会话标签手动编辑组件（Typert RPC 调用 override 服务）
 └── dist/                   # 构建产物（若打包发布）
 ```
 `src/config.ts` —— 用 `@deepseek-ai/schemastery` 定义可配置字段：
@@ -173,8 +173,8 @@ private extractLastTurn(session: Session): ExtractedContent {
 | 会话等待 | 日志末尾存在 `approval/asked` 且没有配对的 `approval/decided` | 无需 LLM |
 | 会话完结 | `todo/write` 最新快照全为 `completed` 或列表为空，且最后 turn 已 closed | 判断主题任务是否全部完成、无剩余事项 |
 | 无效会话 | 规则难以判定 | 判断是否仅为打招呼 / 输入与主题无关无法确定意图 |
-| 进行中 | 7 分钟内出现新 `turn/start`，或 `todo/write` 存在 `pending`/`in_progress` 项；`agent/status` 为 `running` 属**未核实**辅助信号（可选） | 无需 LLM |
-`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。`todo/write`（全量快照，`status ∈ pending | in_progress | completed`）与 `agent/status`（`idle | running`，**未核实、降级为可选**）则分别是判定"完结/进行中"与"进行中"的辅助结构化信号，应一并前置到规则层。
+| 进行中 | 7 分钟内出现新 `turn/start`，或 `todo/write` 存在 `pending`/`in_progress` 项；`agent/status` 为 `running` 属 whole-agent 运行态、官方明示不可作单轮信号，仅可选参考 | 无需 LLM |
+`approval/asked` 与 `approval/decided` 通过 `id` 配对，`decided` 一定在 `asked` 之后追加——这是识别"等待用户授权 / 确认继续"最直接的结构化信号。`todo/write`（全量快照，`status ∈ pending | in_progress | completed`）与 `agent/status`（`idle | running`，已核实存在但为 whole-agent 运行态、官方明示不可作单轮信号，降级为可选）则分别是判定"完结/进行中"与"进行中"的辅助结构化信号，应一并前置到规则层。
 LLM 调用走 `ctx.llm` 服务统一接口，把提取出的最后一轮对话发给配置的 `analysisModel`：
 ```typescript
 private async analyze(session: Session) {
@@ -546,7 +546,7 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 
 **本设计新增利用的官方信号（此前未纳入）**：
 1. **`todo/write` 事件**：全量快照 `TodoItem[]`，`status ∈ pending | in_progress | completed` —— 判定"进行中 vs 完结"的结构化权威信号，前置到规则层，减少 LLM 依赖。
-2. **`agent/status` Cordis 事件**（`idle | running`）：作为"进行中"的实时辅助信号 —— **⚠️ 未核实**（源码未确认该事件存在），设计上**降级为可选**；`todo/write` + `turn/start` 已是"进行中"主信号，不依赖它。
+2. **`agent/status`**（`idle | running`）：真实存在的 agent 运行态（官方 `docs/defensive-patterns.md` "Async state is not synchronous state" 一节明确提及 `agent/status` / `whenIdle()`），但属 **whole-agent 运行态、非逐会话信号**，且官方防御模式文档明示"**Never treat `agent/status` or `whenIdle()` as the result of one follow-up**"（多个排队 follow-up / steering / 注入任务可共享同一个 `running` 区间）——因此设计上**降级为可选**；"进行中"主信号由 `todo/write` + `turn/start` 承担，不依赖它。
 
 **落地注意事项**：
 - 自定义 `session-tag/assigned` 属非 `SurfaceEventType` 的 log-only 事件，无需 `SurfaceIntent`；信息性记录应置 `ignorable: true`（本设计已加）。
@@ -582,8 +582,8 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 - 阻断点 1 背景色渲染挂载点 → **CSS 类名定位**（决策 A）：DOM 定位会话行 + 插件自有 class + 全局样式；`MutationObserver` 兜底增删；规避生产哈希化。
 - 阻断点 2 客户端→宿主写通路 → **Typert RPC**（决策 B）：构建时生成类型化 RPC，宿主注册 `sessionTagOverride` 服务，客户端经生成的桩调用；工具链较重但类型安全。
 
-**未核实项**：
-- `agent/status`（`idle|running`）Cordis 事件：源码未确认，设计上**降级为可选**；"进行中"主信号由 `todo/write` + `turn/start` 承担。
+**未核实项（本轮已补充核实并收敛）**：
+- `agent/status`（`idle|running`）：已确认真实存在（官方 `docs/defensive-patterns.md` 明示），但它是 **whole-agent 运行态**——多个 follow-up / steering / 注入任务共享一个 `running` 区间，官方明确警告**不可作为单次 follow-up / 单轮次的完成信号**。设计上**降级为可选**（不参与规则判定）；"进行中"主信号由 `todo/write` + `turn/start` 承担，语义不受影响。
 
 ## 十四、关键决策与方案选型
 
@@ -614,7 +614,7 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 - 分发：`package.json` 声明 `dsh.bundle.patch`（宿主）+ `dsh.client`（浏览器端），`dsh plugin --profile web add ./dsh-session-tag-manage`。
 
 ### 决策 6：每日 17:00 提醒通路 —— 客户端本地汇总 + 聚焦兜底（推荐）
-投影扩展 `lastActiveAt`，客户端在定时与 `visibilitychange`/`focus` 兜底时本地统计，用 `Notification` 弹桌面提醒；不引入未验证的宿主→客户端推送通道。宿主权威计时（方案 B）作为投影覆盖不足或需更强实时性时的升级路径。
+投影扩展 `lastActiveAt`，客户端在定时与 `visibilitychange`/`focus` 兜底时本地统计，用 `Notification` 弹桌面提醒；不引入未验证的宿主→客户端推送通道。宿主权威计时 + Typert RPC 拉取（方案 B）作为投影覆盖不足或需更强实时性时的升级路径。
 
 ### 决策 7：手动标签更新 —— Typert RPC 写通路 + 投影"后写覆盖" + 锁定手动标签（推荐）
 写通路：客户端经 **Typert RPC**（阻断点 2 决策 B）调用宿主 `sessionTagOverride.set`，宿主校验后追加一条 `source: 'user-override'` 的 `session-tag/assigned` 事件，投影 whole-value 快照自动同步数据与 UI；开关 `manualTagUpdateEnabled`（默认开）在客户端隐藏入口 + 宿主拒绝写入双重生效。冲突策略选"锁定手动标签"：`source === 'user-override'` 时自动分析不覆盖，新 `turn/start` 仍重置为 `in_progress`。
