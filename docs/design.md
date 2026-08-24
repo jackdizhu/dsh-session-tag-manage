@@ -26,18 +26,24 @@ dsh-session-tagger/
 │   ├── tagger.ts           # 核心逻辑：计时 + 内容提取 + LLM 兜底判定
 │   ├── rules.ts            # 规则判定器（纯函数）：abnormal / waiting / todo 推断
 │   ├── projection.ts       # SessionProjection 注册（纯同步 fold + Zod schema）
+│   ├── override.ts         # 宿主侧手动标签服务：校验 + 追加 user-override 事件
 │   └── client/
-│       └── index.ts        # 客户端插件：背景色渲染（slots + useSessionProjection）
+│       ├── index.ts        # 客户端插件：背景色渲染（slots + useSessionProjection）
+│       ├── reminder.ts     # 客户端插件：每日 17:00 会话梳理桌面提醒（定时 + 聚焦兜底）
+│       └── tagEditor.tsx   # 客户端插件：会话标签手动编辑组件（下拉切换）
 └── dist/                   # 构建产物（若打包发布）
 ```
 `src/config.ts` —— 用 `@deepseek-ai/schemastery` 定义可配置字段：
 ```typescript
 import Schema from '@deepseek-ai/schemastery'
 export interface Config {
-  delayMs: number                          // 延迟分析时长，默认 7 分钟
+  delayMs: number                          // 延迟分析时长，默认 7 分钟（用于会话打标签）
   analysisModel: string                    // 用于打标签的模型 id
   maxLastTurnMessages: number              // 参与分析的最后一轮消息上限
   highlightTags: string[]                  // 需要重点高亮的标签
+  dailyReminderTime: string                // 每日会话梳理提醒时间（HH:mm），默认 '17:00'
+  desktopReminderEnabled: boolean          // 浏览器桌面消息提醒开关，默认开启
+  manualTagUpdateEnabled: boolean          // Web UI 手动更新标签开关，默认开启
 }
 export const Config: Schema = Schema.object({
   delayMs: Schema.number().default(7 * 60 * 1000),
@@ -45,6 +51,9 @@ export const Config: Schema = Schema.object({
   maxLastTurnMessages: Schema.number().default(50),
   highlightTags: Schema.array(Schema.string())
     .default(['abnormal_end', 'waiting']),
+  dailyReminderTime: Schema.string().default('17:00'),   // 格式 HH:mm，运行时校验
+  desktopReminderEnabled: Schema.boolean().default(true),
+  manualTagUpdateEnabled: Schema.boolean().default(true),
 })
 ```
 `cordis.yml` 本地开发注册（路径必须写绝对路径）：
@@ -220,7 +229,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'session-tag/assigned': {
       tagId: TagId
       tag: SessionTag
-      source: 'rule-based' | 'llm-based' | 'user-override'
+      source: SessionTagSource
       reason?: string
       assignedAt: number
     }
@@ -251,26 +260,35 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionTag } from './events'
 interface TagState {
   tag: SessionTag | null
+  source: SessionTagSource | null   // 标签来源（含 user-override），供 UI 显示"手动"徽标
   assignedAt: number | null
+  lastActiveAt: number | null   // 最近一次会话活动时间（epoch ms，用于"当日活动"判定）
 }
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
-    'session-tag': { tag: SessionTag | null }
+    'session-tag': { tag: SessionTag | null; source: SessionTagSource | null; lastActiveAt: number | null }
   }
 }
+// 视为"会话活动"的事件类型：出现即刷新 lastActiveAt
+const ACTIVITY_EVENTS = new Set([
+  'turn/start', 'user/message', 'assistant/message',
+  'tool/call', 'tool/result', 'approval/asked',
+])
 export function registerTagProjection(ctx: Context) {
   ctx.sessionProjections.register({
     key: 'session-tag',
     schema: /* Zod schema */,
-    stateVersion: 1,
-    init: () => ({ tag: null, assignedAt: null }),
+    stateVersion: 3,          // view 新增 source，升版本使旧缓存失效
+    init: () => ({ tag: null, source: null, assignedAt: null, lastActiveAt: null }),
     apply(state, event) {
+      const lastActiveAt = ACTIVITY_EVENTS.has(event.type) ? event.time : state.lastActiveAt
       if (event.type === 'session-tag/assigned') {
-        return { tag: event.data.tag, assignedAt: event.data.assignedAt }
+        return { tag: event.data.tag, source: event.data.source, assignedAt: event.data.assignedAt, lastActiveAt }
       }
-      return state   // 未变化必须返回同一引用
+      if (lastActiveAt === state.lastActiveAt) return state  // 未变化必须返回同一引用
+      return { ...state, lastActiveAt }
     },
-    view: state => ({ tag: state.tag }),
+    view: state => ({ tag: state.tag, source: state.source, lastActiveAt: state.lastActiveAt }),
   })
 }
 ```
@@ -312,12 +330,18 @@ export function apply(ctx: ClientContext) {
     return ctx.slots.register(
       { name: 'sidebar.session.item', key: 'session-tagger' },
       () => {
-        const { tag } = useSessionProjection('session-tag')
+        const { tag, source } = useSessionProjection('session-tag')
         const style = TAG_STYLES[tag ?? 'in_progress']
-        return createElement('div', { className: style.className })
+        return createElement(Fragment, null,
+          createElement('div', { className: style.className }),
+          // 手动标签编辑入口（受 manualTagUpdateEnabled 控制），实现见 client/tagEditor.tsx
+          createElement(TagEditor, { sessionId, tag, source }),
+        )
       },
     )
   })
+  // 每日 17:00 会话梳理提醒（浏览器桌面通知），实现见 client/reminder.ts
+  setupDailyReminder(ctx, config)
 }
 ```
 异常终止（红系）和会话等待（橙系）按需求做重点视觉强调，用 `!important` 确保能覆盖主题默认背景。
@@ -350,12 +374,136 @@ export function apply(ctx: ClientContext) {
 3. 完整跑完一个主题任务，确认 LLM 判定为 `completed`
 4. 发"你好"，确认判定为 `invalid`
 5. 刷新页面，确认背景色从投影恢复（验证持久化 + 客户端冷读）
+6. 造一条 `waiting` + 一条 `abnormal_end`（今日活动），17:00 后聚焦页签，确认桌面通知弹出且文案数字正确
+7. 在 Web UI 把 `abnormal_end` 手动改为 `invalid`，确认事件写入、投影更新、背景色同步变化；关闭开关后编辑入口隐藏且服务拒绝写入
 ---
 **几个关键工程决策的取舍**：7 分钟用 `setTimeout` 而不是 cron，是因为它天然随插件生命周期回收，且用 `ctx.effect` 包裹后能与 Fiber 状态机联动；标签写进 SessionEvent 而不是独立存储，是为了让 Fork / Resume / 回放场景下标签语义自动一致，不产生"差不多正确"的第二份状态——这正是 DSH Session Log 设计哲学的直接受益；规则前置 + LLM 兜底的混合判定，则是在准确性、延迟、Token 成本之间的平衡点，如果后续发现 LLM 判"无效会话"的准确率不足，可以把 `approval` 配对检测这类结构化规则继续前置。
 
 ---
 
-## 十一、官方 API 核对与校准记录
+## 十一、每日 17:00 会话梳理提醒（浏览器桌面通知）
+
+### 需求与统计口径
+- 每日 `dailyReminderTime`（默认 **17:00**）执行一次梳理提醒；`desktopReminderEnabled`（默认 **true**）为总开关。
+- 统计口径：**当天有活动**（投影 `lastActiveAt` 落在今日）且标签 ∈ {`abnormal_end`, `waiting`} 的会话。
+- 通知文案：`有 XX 个会话等待确认、XX 个会话异常`；两项皆为 0 时不打扰。
+- 载体：**浏览器桌面通知（Web Notifications API）**，不占页签内 UI，页签未激活也能弹出，避免失焦漏看。
+
+### 判定条件细节
+- "当天有活动"以投影 `lastActiveAt` 判断；日期归属按客户端本地时区（桌面端宿主与浏览器同机，一般一致）。
+- 异常终止即时打标，17:00 时必然可见；等待标签需经 7 分钟分析，17:00 前 7 分钟内结束的会话可能尚未出标签，属可接受边界。
+- 仅统计今日有活动的会话，避免历史旧会话每天重复轰炸。
+
+### 数据通路（三方案）
+
+| 方案 | 思路 | 优点 | 缺点 | 结论 |
+|---|---|---|---|---|
+| A 客户端本地汇总（推荐） | 投影扩展 `lastActiveAt`；客户端在 17:00 定时 + 聚焦兜底时，遍历会话投影本地统计并弹桌面通知 | 全部基于已验证机制（投影 + 槽位 + Notification）；无需新增宿主/推送通道 | 浏览器后台 `setTimeout` 节流可能延迟，需聚焦兜底；投影订阅范围需覆盖全部会话 | ✅ |
+| B 宿主权威计时 + 客户端拉取 | 宿主 17:00 计算摘要缓存；客户端定时/聚焦时经对象服务 RPC 拉取 | 计时可靠（Node 无节流）、数据完整 | 需验证 client→host 对象服务 RPC 机制 | 备选 |
+| C 宿主计算后主动推送 | 宿主 17:00 计算摘要并主动 push 到客户端 | 最实时 | 宿主→客户端通用推送通道未在文档验证，需 spike 确认 | ✗ |
+
+推荐 **A**：零未验证依赖、与"客户端只收成品值"哲学一致；若投影订阅范围不足以覆盖全部会话，或需更强实时性，再升级到 B。
+
+### 浏览器桌面通知实现要点（客户端，`src/client/reminder.ts`）
+1. 权限：`Notification.requestPermission()`，拒绝则静默降级（不打扰）；尊重 `desktopReminderEnabled` 开关。
+2. 排程：计算距下一次 `HH:mm` 的毫秒数，`setTimeout` 循环排程，走客户端 `ctx.effect` 生命周期托管。
+3. **后台节流兜底**：浏览器对后台页签 `setTimeout` 节流，仅靠定时器可能延迟。补充监听 `visibilitychange` / `window.focus`——若当前已过今日提醒时刻且今日未提醒过（`localStorage` 记 `last-notified-date`），立即补查触发。
+4. 统计：遍历会话投影，过滤 `lastActiveAt` 属今日且 `tag ∈ {abnormal_end, waiting}`，计数并组装文案；两数皆 0 不发。
+5. 去重：`last-notified-date` 持久化在浏览器本地，防止重复提醒。
+
+### 配置扩展
+对应 `src/config.ts` 新增两个字段：
+```typescript
+dailyReminderTime: string       // 每日会话梳理提醒时间（HH:mm），默认 '17:00'
+desktopReminderEnabled: boolean // 浏览器桌面消息提醒开关，默认开启
+```
+
+### 验证路径
+1. 造数：今日置一条 `waiting`、一条 `abnormal_end`，17:00 后聚焦页签 → 弹出桌面通知且文案数字正确。
+2. 关掉开关 → 不弹；拒绝通知权限 → 静默；两项计数为 0 → 不弹。
+3. 非今日活动的旧会话不计入提醒。
+
+---
+
+## 十二、Web UI 手动标签更新（用户覆盖）
+
+### 需求
+- 用户在 Web UI 层可手动修改会话标签，如把 `abnormal_end`（异常终止）改为 `invalid`（无效会话）。
+- 更新后：会话标签数据（事件日志 + 投影）与 UI 背景色同步变化。
+- 提供开关 `manualTagUpdateEnabled`（默认开启）控制是否允许手动更新。
+
+### 数据通路（与既有机制完全复用，零新增投影逻辑）
+```
+Web UI 标签下拉 → 客户端调用宿主 override 服务
+  → 宿主校验（开关 / 合法标签 / 会话存在）
+  → session.append(session-tag/assigned, source: 'user-override')
+  → 投影 fold 新事件（whole-value 快照，后写覆盖）
+  → session/projection 推帧 → 客户端 useSessionProjection 重渲染 → 背景色同步
+```
+- 事件写入走宿主侧，标签持久化在会话日志，重启 / 回放 / Fork 语义一致。
+- 投影是 whole-value 快照、"后写覆盖"：手动写一条 `source: 'user-override'` 事件即完成数据与 UI 同步。
+- 手动覆盖会自然影响每日 17:00 梳理统计（如把 `abnormal_end` 改为 `invalid` 后，该会话不再计入"异常"）。
+
+### 配置扩展
+`src/config.ts` 新增：
+```typescript
+manualTagUpdateEnabled: boolean  // Web UI 手动更新标签开关，默认开启
+```
+双重生效：客户端隐藏/禁用编辑入口（交互层）；宿主 override 服务拒绝写入（权威兜底）。
+
+### 宿主侧：手动标签服务（`src/override.ts`）
+```typescript
+const VALID_TAGS: ReadonlySet<SessionTag> = new Set([
+  'in_progress', 'abnormal_end', 'waiting', 'completed', 'invalid',
+])
+export function registerTagOverrideService(ctx: Context, config: Config) {
+  ctx.service.register('sessionTagOverride', {
+    async set(sessionId: string, tag: SessionTag): Promise<{ ok: boolean; reason?: string }> {
+      if (!config.manualTagUpdateEnabled) return { ok: false, reason: 'manual tag update disabled' }
+      if (!VALID_TAGS.has(tag)) return { ok: false, reason: 'invalid tag' }
+      const session = await ctx.sessions.get(sessionId)
+      if (!session) return { ok: false, reason: 'session not found' }
+      session.append({
+        type: 'session-tag/assigned',
+        ignorable: true,
+        data: {
+          tagId: `tag-${session.id}` as TagId,
+          tag, source: 'user-override',
+          reason: 'web ui manual',
+          assignedAt: Date.now(),
+        },
+      })
+      return { ok: true }
+    },
+  })
+}
+```
+（客户端→宿主调用依赖"对象服务 RPC"机制，实现前需确认 dsh 客户端运行时调用宿主服务方法的方式——见「官方 API 核对与校准记录」章节。）
+
+### 客户端侧：标签编辑组件（`src/client/tagEditor.tsx`）
+- 随会话列表项槽位注入：鼠标悬停显示下拉，列出 5 个合法标签，当前标签高亮；`source === 'user-override'` 时显示"手动"徽标。
+- 切换后调用宿主 `sessionTagOverride.set(sessionId, next)`；失败（开关关闭 / 非法值 / 会话不存在）时保留原值并提示。
+- `manualTagUpdateEnabled === false` 时不渲染编辑入口。
+
+### 冲突策略：手动标签 vs 自动标签（三方案）
+
+| 方案 | 行为 | 优点 | 缺点 | 结论 |
+|---|---|---|---|---|
+| A 允许自动覆盖 | 手动改后，后续 7 分钟自动分析可再次覆盖 | 实现最简 | 用户修正被回滚，体验差 | ✗ |
+| B 锁定手动标签（推荐） | 当前标签 `source === 'user-override'` 时，自动分析跳过不覆盖；新 `turn/start` 仍重置为 `in_progress` | 用户修正稳定；会话重新活跃时自动回到进行中，逻辑自洽 | 需在 `analyze()` 前置一个 source 检查 | ✅ |
+| C 时间窗加权 | 手动标签在 N 天内优先，之后允许自动覆盖 | 灵活 | 规则复杂、可预期性差 | ✗ |
+
+推荐 **B**：在 `analyze()` 写自动标签前，读取最近一次 `session-tag/assigned` 的 `source`，若为 `user-override` 则跳过本次写入（不产生新事件、不覆盖投影）。用户仍可再次手动修改，或等新轮次开始后由系统重置为 `in_progress`。
+
+### 验证路径
+1. Web UI 把 `abnormal_end` 手动改为 `invalid` → 事件写入（source=user-override）、投影更新、背景色同步变为无效会话灰淡样式。
+2. 手动改后 7 分钟内再次触发分析 → 标签不被覆盖（方案 B）；新发一条消息（新 `turn/start`）→ 重置为 `in_progress`。
+3. 关闭 `manualTagUpdateEnabled` → 编辑入口隐藏，且直接调用服务被拒。
+4. 刷新页面 → 手动标签从投影缓存恢复（持久化验证）。
+
+---
+
+## 十三、官方 API 核对与校准记录
 
 本设计在落地前对照 DeepSeek Harness 官方插件文档（[develop/basic](https://deepseek-harness.github.io/deepseek-harness/develop/basic/)）与 GitHub 源码逐项核对，校准结论如下：
 
@@ -379,8 +527,10 @@ export function apply(ctx: ClientContext) {
 - 自定义 `session-tag/assigned` 属非 `SurfaceEventType` 的 log-only 事件，无需 `SurfaceIntent`；信息性记录应置 `ignorable: true`（本设计已加）。
 - 投影 `view()` 输出须过 Zod 校验；`apply` 对无关事件必须返回同一状态引用（`Object.is` 相等才产生零下游工作）。
 - 客户端槽位路径（`sidebar.session.item`）与 `dsh.client` 字段格式需按目标 dsh 版本核对（当前 0.1.0-rc.x ~ 0.1.1-rc.1，官方预告破坏性变更，投影 API 已在 rc.1 升级过）。
+- 客户端读取自身配置、遍历会话投影与列表的 API 需按目标 dsh 版本核对；桌面通知为标准 Web API（`Notification`），需用户授权权限。
+- 客户端→宿主的手动标签写入依赖"对象服务 RPC"（宿主 `ctx.service` 注册 + 客户端调用），为新增未核验接口，实现前需确认 dsh 客户端运行时调用宿主服务方法的方式。
 
-## 十二、关键决策与方案选型
+## 十四、关键决策与方案选型
 
 ### 总体实现方案（三选一）
 
@@ -407,4 +557,10 @@ export function apply(ctx: ClientContext) {
 ### 决策 5：打包与分发 —— 先本地 patch，后 bundle
 - 开发期：`cordis.yml` + `--patch`（绝对路径引用 src）。
 - 分发：`package.json` 声明 `dsh.bundle.patch`（宿主）+ `dsh.client`（浏览器端），`dsh plugin --profile web add ./dsh-session-tag-manage`。
+
+### 决策 6：每日 17:00 提醒通路 —— 客户端本地汇总 + 聚焦兜底（推荐）
+投影扩展 `lastActiveAt`，客户端在定时与 `visibilitychange`/`focus` 兜底时本地统计，用 `Notification` 弹桌面提醒；不引入未验证的宿主→客户端推送通道。宿主权威计时（方案 B）作为投影覆盖不足或需更强实时性时的升级路径。
+
+### 决策 7：手动标签更新 —— 复用投影"后写覆盖" + 锁定手动标签（推荐）
+手动改标签 = 宿主追加一条 `source: 'user-override'` 的 `session-tag/assigned` 事件，投影 whole-value 快照自动同步数据与 UI；开关 `manualTagUpdateEnabled`（默认开）在客户端隐藏入口 + 宿主拒绝写入双重生效。冲突策略选"锁定手动标签"：`source === 'user-override'` 时自动分析不覆盖，新 `turn/start` 仍重置为 `in_progress`。
 
