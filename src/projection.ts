@@ -95,17 +95,18 @@ export function apply(state: TagProjectionState, event: SessionEvent): TagProjec
  * @param ctx - Cordis Context（须已注入 `sessionProjections` 服务）
  */
 export function registerTagProjection(ctx: Context): void {
+  // 契约目标：全局运行时 v0.1.0-rc.7 的 SessionProjectionRegistry.register()
+  // 直接读顶层 def.schema / def.view（不展开 wire）。本地 dsh-session-projection
+  // v0.1.1-rc.2 类型为 stateSchema / wire:{viewSchema,view}，故以 as any 屏蔽差异，
+  // 结构按全局运行时形状书写 → 无需 postbuild patch。
   ctx.sessionProjections.register({
     key: 'session-tag',
-    stateSchema,
+    schema: stateSchema,
     stateVersion: 3, // view 含 source 等字段，升版本使旧持久化缓存失效
     init,
     apply,
-    wire: {
-      viewSchema,
-      view(state: TagProjectionState): TagProjectionValue {
-        return { tag: state.tag, source: state.source, lastActiveAt: state.lastActiveAt }
-      },
+    view(state: TagProjectionState): TagProjectionValue {
+      return { tag: state.tag, source: state.source, lastActiveAt: state.lastActiveAt }
     },
-  })
+  } as any) // as any: 本地包与全局运行时 API 契约不同，以全局运行时形状为准
 }

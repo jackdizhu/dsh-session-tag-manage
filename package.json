@@ -3,17 +3,21 @@
   "version": "0.1.0",
   "description": "会话管理插件：会话标签自动分析 + Web UI 背景色渲染 + 每日 17:00 桌面提醒 + Web UI 手动标签更新",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js"
+  },
   "files": [
-    "src",
+    "dist",
     "cordis.yml",
     "README.md"
   ],
   "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && babel src --out-dir dist --extensions .ts --ignore \"src/client/**\" && esbuild src/client/index.ts --bundle --format=esm --platform=browser --outfile=dist/client.js",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.1",
@@ -30,8 +34,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@babel/cli": "^7.28.0",
+    "@babel/core": "^7.28.0",
+    "@babel/plugin-proposal-decorators": "^7.25.0",
+    "@babel/plugin-transform-class-properties": "^7.25.0",
+    "@babel/plugin-transform-class-static-block": "^7.29.7",
+    "@babel/preset-typescript": "^7.28.0",
     "@deepseek-ai/dsh-type-meta": "file:./stubs/dsh-type-meta",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
     "happy-dom": "^20.11.6",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
@@ -40,7 +51,9 @@
     "bundle": {
       "patch": "./cordis.yml"
     },
-    "client": "./src/client/index.ts"
+    "client": {
+      "platform": "web"
+    }
   },
   "pnpm": {
     "peerDependencyRules": {
