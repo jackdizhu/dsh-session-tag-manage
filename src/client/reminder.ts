@@ -13,9 +13,9 @@
  * 说明：统计 / 文案 / 时间计算为纯函数（可单测），排程 / 通知 / 事件监听为 DOM 侧，经 `ctx.effect` 托管。
  */
 import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
-import type { Config } from '../config'
-import type { SessionTag } from '../events'
-import '../projection-types' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
+import type { Config } from '../config.ts'
+import type { SessionTag } from '../events.ts'
+import '../projection-types.ts' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
 
 /** localStorage 去重键：记录最近一次提醒的本地日期（YYYY-MM-DD）。带插件命名空间避免与同源其它插件冲突。 */
 const LAST_NOTIFIED_KEY = 'dsh-session-tag-manage:last-notified-date'

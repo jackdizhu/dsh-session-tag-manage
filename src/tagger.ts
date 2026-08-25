@@ -13,10 +13,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Config } from './config'
-import { applyRules } from './rules'
-import { isSessionTag } from './events'
-import type { SessionTag, SessionTagSource, TagId } from './events'
+import type { Config } from './config.ts'
+import { applyRules } from './rules.ts'
+import { isSessionTag } from './events.ts'
+import type { SessionTag, SessionTagSource, TagId } from './events.ts'
 
 /** 提取出的最后一轮可读文本内容。 */
 export interface ExtractedContent {
@@ -100,10 +100,15 @@ export class SessionTagger {
   /** sessionId -> 取消函数（重置式计时器） */
   private readonly timers = new Map<string, () => void>()
 
-  constructor(
-    private readonly ctx: Context,
-    private readonly config: Config,
-  ) {}
+  /** 宿主上下文：注册事件 / 计时器等生命周期（Node strip-only 不支持参数属性，故显式字段赋值） */
+  private readonly ctx: Context
+  /** 插件配置：delayMs 等（同左） */
+  private readonly config: Config
+
+  constructor(ctx: Context, config: Config) {
+    this.ctx = ctx
+    this.config = config
+  }
 
   /**
    * 启动 / 重置某会话的延迟分析计时器。

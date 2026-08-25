@@ -12,8 +12,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionTag } from '../events'
-import type { TagOverrideResult } from '../override'
+import type { SessionTag } from '../events.ts'
+import type { TagOverrideResult } from '../override.ts'
 
 /** 声明合并：把 `sessionTagOverride` 命名空间并入 Typert 客户端远程表（等价编译器生成）。 */
 declare module '@deepseek-ai/dsh-typert-protocol' {

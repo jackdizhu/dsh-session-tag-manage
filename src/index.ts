@@ -13,11 +13,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { Config } from './config'
-import { SessionTagger } from './tagger'
-import { registerTagProjection } from './projection'
-import { registerTagOverrideService } from './override'
-import './events' // 副作用导入：激活 SessionEventMap 声明合并
+import { Config } from './config.ts'
+import { SessionTagger } from './tagger.ts'
+import { registerTagProjection } from './projection.ts'
+import { registerTagOverrideService } from './override.ts'
+import './events.ts' // 副作用导入：激活 SessionEventMap 声明合并
 
 export const name = 'session-tagger'
 // sessions：手动标签更新服务（sessionTagOverride.set 需读 ctx.sessions）；由 dsh-session 提供

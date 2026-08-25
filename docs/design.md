@@ -56,13 +56,13 @@ export const Config: Schema = Schema.object({
   manualTagUpdateEnabled: Schema.boolean().default(true),
 })
 ```
-`cordis.yml` 本地开发注册（路径必须写绝对路径）：
+`cordis.yml` 本地开发注册（Windows 下 name 必须写 `file:///` URL，`C:/` 盘符路径会被 ESM 视为非法协议）：
 ```yaml
 - insert:
   - id: session-tagger
-    name: '/绝对路径/dsh-session-tag-manage/src/index.ts'
+    name: 'file:///C:/global-user-data/ai-workspace/dsh-session-tag-manage/src/index.ts'
 ```
-启动：`pnpm dsh web --patch ./dsh-session-tag-manage/cordis.yml`
+启动（在项目目录内运行）：`cd dsh-session-tag-manage && pnpm dsh web --patch ./cordis.yml`
 ## 三、事件监听：识别 AI 回复结束与异常终止
 `session/event` 是唯一的日志事件入口，`turn/*` 不是同名 Cordis 事件，必须在监听器里检查 `event.type`。宿主侧入口 `src/index.ts`：
 ```typescript
@@ -620,7 +620,7 @@ export function registerTagOverrideService(ctx: Context, config: Config) {
 会话列表由 ui-workspace 渲染、无逐行槽位，故客户端用 `useProjection('session-tag')`（经 `SessionStandardProps` 注入）读投影成品值，DOM 定位会话行并挂插件自有 `dsh-session-row.stag-*` class；异常红、等待橙 `!important` 强调。用 `MutationObserver` 兜底行增删；生产环境 CSS-module 哈希化风险通过插件自有 class 规避。
 
 ### 决策 5：打包与分发 —— 先本地 patch，后 bundle
-- 开发期：`cordis.yml` + `--patch`（绝对路径引用 src）。
+- 开发期：`cordis.yml` + `--patch`（`name` 用 `file:///` URL 引用 src）。
 - 分发：`package.json` 声明 `dsh.bundle.patch`（宿主）+ `dsh.client`（浏览器端），`dsh plugin --profile web add ./dsh-session-tag-manage`。
 
 ### 决策 6：每日 17:00 提醒通路 —— 客户端本地汇总 + 聚焦兜底（推荐）

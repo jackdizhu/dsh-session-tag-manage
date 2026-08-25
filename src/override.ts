@@ -20,9 +20,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { Config } from './config'
-import { VALID_TAGS, isSessionTag } from './events'
-import type { SessionTag, TagId } from './events'
+import type { Config } from './config.ts'
+import { VALID_TAGS, isSessionTag } from './events.ts'
+import type { SessionTag, TagId } from './events.ts'
 
 /** `set` 的业务返回（传输层包装见协议 `RemoteResult`，业务失败含 reason）。 */
 export interface TagOverrideResult {
@@ -37,11 +37,12 @@ export interface TagOverrideResult {
  * Gateway（服务随所属 fiber 卸载自动移除）。
  */
 export class SessionTagOverrideService extends TypertRemoteService {
-  constructor(
-    ctx: Context,
-    private readonly config: Config,
-  ) {
+  /** 插件配置：manualTagUpdateEnabled 等（Node strip-only 不支持参数属性，故显式字段赋值） */
+  private readonly config: Config
+
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'sessionTagOverride')
+    this.config = config
   }
 
   /**

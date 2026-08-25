@@ -10,7 +10,7 @@
  * `agent/status` 是 whole-agent 运行态、官方明示不可作单轮信号，不作为判定依据。
  */
 import type { SessionEvent, SessionEventType } from '@deepseek-ai/dsh-session/types'
-import type { SessionTag } from './events'
+import type { SessionTag } from './events.ts'
 
 /**
  * 规则判定结果：

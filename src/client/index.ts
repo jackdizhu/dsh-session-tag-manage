@@ -18,10 +18,10 @@
  * - Web UI 手动标签编辑（悬停下拉）→ setupTagEditor（src/client/tagEditor.tsx）
  */
 import type { ClientContext, ISessions, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { Config } from '../config'
-import '../projection-types' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
-import { setupDailyReminder } from './reminder'
-import { setupTagEditor } from './tagEditor'
+import { Config } from '../config.ts'
+import '../projection-types.ts' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
+import { setupDailyReminder } from './reminder.ts'
+import { setupTagEditor } from './tagEditor.ts'
 import {
   ALL_TAG_CLASSES,
   TAG_CLASS,
@@ -29,7 +29,7 @@ import {
   clientSessions,
   locateSessionRows,
   readTag,
-} from './position'
+} from './position.ts'
 
 export const name = 'session-tag-manage-client'
 // sessions：会话列表快照（投影成品值经列表快照下发）

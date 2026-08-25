@@ -61,10 +61,10 @@ dsh-session-tag-manage/
 
 ## 使用
 
-本地开发（`cordis.yml` 中路径须写绝对路径）：
+本地开发（`cordis.yml` 中 `name` 须写 `file:///` URL，`C:/` 盘符路径不合法；dsh 命令须在项目目录内运行）：
 
 ```bash
-pnpm dsh web --patch ./dsh-session-tag-manage/cordis.yml
+cd dsh-session-tag-manage && pnpm dsh plugin --profile web add .
 ```
 
 打包发布后安装：

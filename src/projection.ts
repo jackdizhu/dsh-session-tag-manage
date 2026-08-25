@@ -18,11 +18,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { z } from 'zod'
 import '@deepseek-ai/dsh-session-projection' // 副作用导入：激活 Context.sessionProjections 声明合并（typecheck）
-import type { TagProjectionState, TagProjectionValue } from './projection-types'
-import './projection-types' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
+import type { TagProjectionState, TagProjectionValue } from './projection-types.ts'
+import './projection-types.ts' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
 
 /** 重新导出宿主 fold 状态类型，供测试与宿主侧使用。 */
-export type { TagProjectionState } from './projection-types'
+export type { TagProjectionState } from './projection-types.ts'
 
 /**
  * 视为"会话活动"的事件类型：出现即刷新 lastActiveAt。

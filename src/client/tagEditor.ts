@@ -25,12 +25,12 @@ import type {
   SessionId,
   SessionListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { Config } from '../config'
-import { VALID_TAGS } from '../events'
-import type { SessionTag } from '../events'
-import type { TagOverrideResult } from '../override'
-import { clientSessions, readTagProjection } from './position'
-import { sessionTagOverrideRpc } from './typert-stubs'
+import type { Config } from '../config.ts'
+import { VALID_TAGS } from '../events.ts'
+import type { SessionTag } from '../events.ts'
+import type { TagOverrideResult } from '../override.ts'
+import { clientSessions, readTagProjection } from './position.ts'
+import { sessionTagOverrideRpc } from './typert-stubs.ts'
 
 /** 标签 → 中文显示名（下拉选项与当前标签展示）。 */
 const TAG_LABELS: Record<SessionTag, string> = {

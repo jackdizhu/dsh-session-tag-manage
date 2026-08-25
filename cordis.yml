@@ -1,5 +1,5 @@
-# 本地开发 patch 注册（路径必须写绝对路径）
-# 启动：pnpm dsh web --patch ./dsh-session-tag-manage/cordis.yml
+# 本地开发 patch 注册（Windows 下 name 必须写 file:/// URL，C:/ 盘符路径会被 ESM 视为非法协议）
+# 启动（在项目目录内运行）：pnpm dsh web --patch ./cordis.yml
 - insert:
     - id: session-tagger
-      name: 'C:/global-user-data/ai-workspace/dsh-session-tag-manage/src/index.ts'
+      name: 'file:///C:/global-user-data/ai-workspace/dsh-session-tag-manage/src/index.ts'

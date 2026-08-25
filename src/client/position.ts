@@ -18,9 +18,9 @@ import type {
   SessionListState,
   SessionSummary,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionTag } from '../events'
-import type { TagProjectionValue } from '../projection-types'
-import '../projection-types' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
+import type { SessionTag } from '../events.ts'
+import type { TagProjectionValue } from '../projection-types.ts'
+import '../projection-types.ts' // 副作用导入：激活 SessionProjectionMap 声明合并（typecheck）
 
 /** 标签 → 插件自有 CSS class 名（不依赖 ui-workspace 内部类名，规避生产 CSS-module 哈希化）。 */
 export const TAG_CLASS: Record<SessionTag, string> = {

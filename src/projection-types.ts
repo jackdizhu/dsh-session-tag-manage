@@ -9,7 +9,7 @@
  * 说明：本模块仅含类型与声明合并（零运行时逻辑），供宿主与客户端导入，
  * 避免两边重复声明导致类型漂移。
  */
-import type { SessionTag, SessionTagSource } from './events'
+import type { SessionTag, SessionTagSource } from './events.ts'
 
 /** 客户端可见投影值（wire.view 输出，与 SessionProjectionMap 对齐）。 */
 export interface TagProjectionValue {
