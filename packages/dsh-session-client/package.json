@@ -5,9 +5,6 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
     "client": "./dist/index.js"
   },
   "peerDependencies": {},

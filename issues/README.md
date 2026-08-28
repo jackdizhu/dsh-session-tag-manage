@@ -14,3 +14,11 @@
 | `config.yml` | 模板选择器配置（禁止空白 Issue） |
 
 > 维护提示：模板修改请直接编辑 `.github/ISSUE_TEMPLATE/` 下对应文件。
+
+## 已记录的问题
+
+| 文件 | 问题描述 | 状态 |
+|---|---|---|
+| `001-client-plugin-loading-error.md` | 客户端插件通过 cordis.yml --patch 加载时等待 slots 服务超时 | 已解决 |
+| `002-windows-path-format-error.md` | Windows 绝对路径格式不兼容 ESM 加载器 | 已解决 |
+| `003-client-package-not-found.md` | 客户端插件在 DSH profile 的 node_modules 中找不到 | 已解决 |
