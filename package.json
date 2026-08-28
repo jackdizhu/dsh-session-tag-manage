@@ -1,0 +1,75 @@
+{
+  "name": "organize-workspace-sessions",
+  "version": "1.0.0",
+  "description": "DSH Skill for organizing DeepSeek Harness workspace sessions: rename them as 类别｜主题 and report archive/rename/judgment suggestions. ChatGPT supported; Claude not supported.",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "license": "MIT",
+  "author": "caoqinnan-web",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caoqinnan-web/organize-workspace-sessions.git"
+  },
+  "homepage": "https://github.com/caoqinnan-web/organize-workspace-sessions#readme",
+  "bugs": {
+    "url": "https://github.com/caoqinnan-web/organize-workspace-sessions/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "agent-skills",
+    "session-management",
+    "workspace",
+    "conversation-management"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "check": "pnpm run typecheck && pnpm run build && pnpm test",
+    "prepack": "pnpm run check"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.5",
+    "@types/node": "^26.0.0",
+    "typescript": "^7.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./skills/organize-workspace-sessions/SKILL.md": "./skills/organize-workspace-sessions/SKILL.md",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "skills/organize-workspace-sessions/SKILL.md",
+    "skills/organize-workspace-sessions/agents/openai.yaml",
+    "skills/organize-workspace-sessions/scripts/dsh_rpc.sh",
+    "skills/organize-workspace-sessions/scripts/session_digest.py",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
