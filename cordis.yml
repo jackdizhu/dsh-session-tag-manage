@@ -1,0 +1,5 @@
+- insert:
+    - id: dsh-session-base-host
+      name: dsh-session-base-host
+    - id: dsh-session-base-client
+      name: dsh-session-base-client
