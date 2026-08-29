@@ -24,9 +24,9 @@
 
 ## 任务 4：构建与测试
 
-- [x] 执行 `pnpm build` 生成双产物（Host ESM + Client CJS）
+- [x] 执行 `pnpm build` 生成三产物（Host ESM + Client Node 半区 ESM + Client 浏览器半区 CJS）并拼接客户端注册包装
 - [x] 验证 `packages/dsh-session-host/dist/index.js` 产物格式正确
-- [x] 验证 `packages/dsh-session-client/dist/index.js` 产物格式正确
+- [x] 验证 `packages/dsh-session-client/dist/index.cjs` 产物格式正确（带注册包装）
 - [x] 执行 `pnpm typecheck` 确认无类型错误
 - [x] 创建根目录 `vitest.config.ts`（Vitest 配置，支持 workspace 模式）
 - [x] 创建 `packages/dsh-session-host/__tests__/index.test.ts`（宿主端测试用例）

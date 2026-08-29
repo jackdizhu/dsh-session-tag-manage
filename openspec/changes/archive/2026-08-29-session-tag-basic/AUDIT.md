@@ -18,7 +18,7 @@
 | 要求 | Spec 描述 | 实现状态 | 备注 |
 |------|-----------|----------|------|
 | 路由注册 | 通过 `ctx.webServer` 注册 `/dsh-session-host-test` 路由 | ✅ 已实现 | `packages/dsh-session-host/src/index.ts` |
-| 响应格式 | 返回 `{ "serverTime": <epoch_ms> }`，HTTP 200 | ✅ 已实现 | `res.json({ serverTime: Date.now() })` |
+| 响应格式 | 返回 `{ "serverTime": <epoch_ms> }`，HTTP 200 | ✅ 已实现 | `res.writeHead(200) + res.end(JSON.stringify(...))` |
 | 路径规范 | 路由路径以 `/dsh-session-host-` 开头 | ✅ 已实现 | `/dsh-session-host-test` |
 | 插件规范 | 导出 `name`、`inject`、`apply` 符合 Cordis 规范 | ✅ 已实现 | `name='dsh-session-base-host'`, `inject=['webServer']` |
 | 模块归属 | 代码位于 `packages/dsh-session-host/` 目录 | ✅ 已实现 | `src/index.ts` |
@@ -47,7 +47,7 @@
 |------|-----------|----------|------|
 | Canvas 创建 | 创建 Canvas 元素（100x60px） | ✅ 已实现 | `canvas.width = 100; canvas.height = 60` |
 | 蓝色块绘制 | 背景色 #3b82f6 | ✅ 已实现 | `ctx2d.fillStyle = '#3b82f6'` |
-| DOM 定位 | 使用稳定的 DOM 选择器 | ✅ 已实现 | `document.querySelector('[data-session-row]')` 降级到 `document.body` |
+| DOM 定位 | 使用稳定的 DOM 选择器 | ✅ 已实现 | Canvas fixed 右下角定位挂载到 `document.body`；`data-*` 选择器仅用于扫描 |
 | 点击事件 | 控制台输出 `type`、`time`、`x`、`y` | ✅ 已实现 | `console.log('[SessionTag] Canvas clicked:', {...})` |
 | 模块归属 | 代码位于 `packages/dsh-session-client/` 目录 | ✅ 已实现 | `src/index.ts` |
 | 包配置 | 包含 `package.json`、`dsh` manifest | ✅ 已实现 | `dsh.client` 配置 |
@@ -58,7 +58,7 @@
 |----------|------|------|
 | 应导出符合 Cordis 插件规范的 name | ✅ 通过 | `expect(mod.name).toBe('dsh-session-base-client')` |
 | 应导出 inject 数组 | ✅ 通过 | `expect(mod.inject).toContain('slots')` |
-| apply 函数应创建 Canvas 元素并追加到容器 | ✅ 通过 | 验证 `mockAppendChild` 调用 |
+| apply 函数应创建 Canvas 元素并固定定位到右下角 | ✅ 通过 | 验证 `document.body.querySelector('canvas')` |
 | Canvas 应具有正确的尺寸（100x60） | ✅ 通过 | 验证 `canvas.width` 和 `canvas.height` |
 | Canvas 应设置 cursor: pointer 样式 | ✅ 通过 | 验证 `canvas.style.cursor` |
 | Canvas 应绑定 click 事件监听器 | ✅ 通过 | 验证 `console.log` 调用 |
@@ -87,8 +87,8 @@
 | 约束 | 实现状态 | 备注 |
 |------|----------|------|
 | 宿主侧通过 `ctx.webServer` 注册 HTTP 路由 | ✅ 符合 | `ctx.webServer.register()` |
-| 客户端侧通过 DOM 定位渲染 Canvas | ✅ 符合 | `document.querySelector('[data-session-row]')` |
-| 不触碰宿主数据源之外的 DOM | ✅ 符合 | 仅操作自身锚点区域 |
+| 客户端侧通过 DOM 定位渲染 Canvas | ✅ 符合 | Canvas fixed 右下角定位挂载到 `document.body` |
+| 不触碰宿主数据源之外的 DOM | ✅ 符合 | Canvas 独立 fixed 挂载，不侵入会话区域 DOM |
 | 双包拆分：host/client | ✅ 符合 | `packages/dsh-session-host` 和 `packages/dsh-session-client` |
 | 构建产物：Host ESM + Client CJS | ✅ 符合 | `tsdown.config.ts` 配置 |
 
@@ -99,7 +99,7 @@
 | Host 产物格式 | ESM | ✅ 符合 | `format: 'esm'` |
 | Host 目标 | ES2024 | ✅ 符合 | `target: 'es2024'` |
 | Client 产物格式 | CJS | ✅ 符合 | `format: 'cjs'` |
-| Client UMD wrapper | `window.__ModuleLoader__` | ✅ 符合 | `banner.js` 配置 |
+| Client UMD wrapper | `window.__ModuleLoader__` | ✅ 符合 | `scripts/wrap-client-bundle.mjs` 后处理拼接 |
 | External 依赖 | `@deepseek-ai/*` | ✅ 符合 | `external: ['@deepseek-ai/*']` |
 
 ### 审计结论
@@ -141,7 +141,7 @@
 |------|----------|----------|
 | 宿主接口验证 | ✅ 达成 | 测试用例覆盖路由注册和响应格式 |
 | 客户端 Canvas 验证 | ✅ 达成 | 测试用例覆盖 Canvas 创建和事件绑定 |
-| 双包构建验证 | ✅ 达成 | `pnpm build` 成功生成 `dist/index.js` |
+| 双包构建验证 | ✅ 达成 | `pnpm build` 成功生成 `host/dist/index.js` + `client/dist/host.js` + `client/dist/index.cjs` |
 | TypeScript 类型检查 | ✅ 达成 | `pnpm typecheck` 无错误 |
 | 单元测试验证 | ✅ 达成 | `pnpm test` 全部通过（12 个测试用例） |
 
@@ -156,7 +156,7 @@
 **✅ 通过**
 
 ### 审计发现的问题
-无
+无（注：2026-08-29 复核时发现 design.md/proposal.md 部分描述与实际代码存在偏差，已按最新代码同步更新，详见变更目录内文档）
 
 ### 审计建议
 1. **后续扩展**：扩展设计（`/dsh-session-host-get` 接口 + 客户端 fetch 调用）可在下一阶段实现
