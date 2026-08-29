@@ -6,8 +6,8 @@ DeepSeek DSH 插件 - 会话管理，帮助用户快速识别哪些会话需要�
 
 本项目是基于 DeepSeek Harness (DSH) 插件系统构建的会话管理插件，采用双包拆分架构：
 
-- **宿主端插件** (`dsh-session-base-host`)：HTTP 接口实现
-- **客户端插件** (`dsh-session-base-client`)：Canvas 交互实现
+- **宿主端插件** (`dsh-session-tag-manage-host`)：HTTP 接口实现
+- **客户端插件** (`dsh-session-tag-manage-client`)：Canvas 交互实现
 
 ## 目录结构
 
@@ -102,10 +102,10 @@ pnpm build
 pnpm test
 
 # 运行宿主端测试
-pnpm test --filter dsh-session-base-host
+pnpm test --filter dsh-session-tag-manage-host
 
 # 运行客户端测试
-pnpm test --filter dsh-session-base-client
+pnpm test --filter dsh-session-tag-manage-client
 
 # 生成覆盖率报告
 pnpm test:coverage
@@ -119,13 +119,13 @@ pnpm typecheck
 
 ## 插件配置说明
 
-### 宿主端插件 (`dsh-session-base-host`)
+### 宿主端插件 (`dsh-session-tag-manage-host`)
 
 - **注册方式**：通过 `cordis.patch.yml` 或 `cordis.yml` 配合 `--patch` 参数
 - **HTTP 接口**：`/dsh-session-host-test`
 - **返回格式**：`{ "serverTime": <epoch_ms> }`
 
-### 客户端插件 (`dsh-session-base-client`)
+### 客户端插件 (`dsh-session-tag-manage-client`)
 
 - **加载方式**：通过 `dsh.client` 配置，由 DSH 客户端运行时加载
 - **功能**：在 DOM 节点区域创建 Canvas 元素，绘制蓝色块支持点击

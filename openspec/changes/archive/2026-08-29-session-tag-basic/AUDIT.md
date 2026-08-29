@@ -20,7 +20,7 @@
 | 路由注册 | 通过 `ctx.webServer` 注册 `/dsh-session-host-test` 路由 | ✅ 已实现 | `packages/dsh-session-host/src/index.ts` |
 | 响应格式 | 返回 `{ "serverTime": <epoch_ms> }`，HTTP 200 | ✅ 已实现 | `res.writeHead(200) + res.end(JSON.stringify(...))` |
 | 路径规范 | 路由路径以 `/dsh-session-host-` 开头 | ✅ 已实现 | `/dsh-session-host-test` |
-| 插件规范 | 导出 `name`、`inject`、`apply` 符合 Cordis 规范 | ✅ 已实现 | `name='dsh-session-base-host'`, `inject=['webServer']` |
+| 插件规范 | 导出 `name`、`inject`、`apply` 符合 Cordis 规范 | ✅ 已实现 | `name='dsh-session-tag-manage-host'`, `inject=['webServer']` |
 | 模块归属 | 代码位于 `packages/dsh-session-host/` 目录 | ✅ 已实现 | `src/index.ts` |
 | 包配置 | 包含 `package.json`、`dsh` manifest | ✅ 已实现 | `dsh.bundle.patch` 配置 |
 
@@ -28,7 +28,7 @@
 
 | 测试用例 | 状态 | 说明 |
 |----------|------|------|
-| 应导出符合 Cordis 插件规范的 name | ✅ 通过 | `expect(mod.name).toBe('dsh-session-base-host')` |
+| 应导出符合 Cordis 插件规范的 name | ✅ 通过 | `expect(mod.name).toBe('dsh-session-tag-manage-host')` |
 | 应导出 inject 数组 | ✅ 通过 | `expect(mod.inject).toContain('webServer')` |
 | apply 函数应注册 /dsh-session-host-test 路由 | ✅ 通过 | 验证 `mockRegister` 调用 |
 | 路由处理器应返回包含 serverTime 的 JSON | ✅ 通过 | 验证响应格式 |
@@ -56,7 +56,7 @@
 
 | 测试用例 | 状态 | 说明 |
 |----------|------|------|
-| 应导出符合 Cordis 插件规范的 name | ✅ 通过 | `expect(mod.name).toBe('dsh-session-base-client')` |
+| 应导出符合 Cordis 插件规范的 name | ✅ 通过 | `expect(mod.name).toBe('dsh-session-tag-manage-client')` |
 | 应导出 inject 数组 | ✅ 通过 | `expect(mod.inject).toContain('slots')` |
 | apply 函数应创建 Canvas 元素并固定定位到右下角 | ✅ 通过 | 验证 `document.body.querySelector('canvas')` |
 | Canvas 应具有正确的尺寸（100x60） | ✅ 通过 | 验证 `canvas.width` 和 `canvas.height` |
@@ -76,7 +76,7 @@
 | 设计要求 | 实现状态 | 备注 |
 |----------|----------|------|
 | `package.json`（项目配置 + workspace 声明） | ✅ 已实现 | 使用 `pnpm-workspace.yaml` |
-| `cordis.yml`（本地开发 patch 注册） | ✅ 已实现 | `dsh-session-base-host` 注册 |
+| `cordis.yml`（本地开发 patch 注册） | ✅ 已实现 | `dsh-session-tag-manage-host` 注册 |
 | `tsconfig.json`（TypeScript 基础配置） | ✅ 已实现 | ES2024 + ESNext |
 | `tsdown.config.ts`（双产物构建配置） | ✅ 已实现 | Host ESM + Client CJS |
 | `packages/dsh-session-host/src/index.ts` | ✅ 已实现 | HTTP 路由注册 |

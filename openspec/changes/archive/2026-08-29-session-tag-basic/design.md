@@ -65,7 +65,7 @@ dsh-session-tag-manage/
 ```typescript
 import type { Context } from '@deepseek-ai/cordis'
 
-export const name = 'dsh-session-base-host'
+export const name = 'dsh-session-tag-manage-host'
 export const inject = ['webServer']
 
 export function apply(ctx: Context) {
@@ -89,7 +89,7 @@ export function apply(ctx: Context) {
 
 ```json
 {
-  "name": "dsh-session-base-host",
+  "name": "dsh-session-tag-manage-host",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -111,7 +111,7 @@ export function apply(ctx: Context) {
 ```typescript
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
-export const name = 'dsh-session-base-client'
+export const name = 'dsh-session-tag-manage-client'
 export const inject = ['slots']
 
 export function apply(ctx: ClientContext) {
@@ -163,7 +163,7 @@ export function apply(ctx: ClientContext) {
 
 ```json
 {
-  "name": "dsh-session-base-client",
+  "name": "dsh-session-tag-manage-client",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/host.js",
@@ -237,10 +237,10 @@ export default defineConfig([
 # 注意：不能用 file:// 源码路径，否则客户端插件无法被编入 __DSH_BOOT__。
 # 修改源码后需执行 pnpm build 再启动。
 - insert:
-    - id: dsh-session-base-host
-      name: dsh-session-base-host
-    - id: dsh-session-base-client
-      name: dsh-session-base-client
+    - id: dsh-session-tag-manage-host
+      name: dsh-session-tag-manage-host
+    - id: dsh-session-tag-manage-client
+      name: dsh-session-tag-manage-client
 ```
 
 > 注：两个包内还各自维护 `cordis.patch.yml`（dsh manifest `bundle.patch` 指向，内容为按包名注册），用于打包分发场景。

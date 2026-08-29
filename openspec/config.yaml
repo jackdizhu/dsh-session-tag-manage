@@ -16,17 +16,17 @@ context: |
     - 分发：package.json 声明 dsh.bundle.patch（宿主）+ dsh.client（浏览器端）
   API 风格：宿主侧 HTTP 路由（ctx.webServer 注册 /dsh-session-host-* 接口）+ 客户端 Canvas 交互（DOM 定位 + fetch 调用宿主接口）
   关键领域约定：
-    - 插件命名：dsh-session-base-host（宿主）/ dsh-session-base-client（客户端），双包拆分（packages/）
+    - 插件命名：dsh-session-tag-manage-host（宿主）/ dsh-session-tag-manage-client（客户端），双包拆分（packages/）
     - 宿主 HTTP 接口：/dsh-session-host-test 无参返回当前服务端时间；/dsh-session-host-get 参数为工作区，返回当前工作区 session 会话数量
     - host 参考实现：docs/dsh-session-manager.md（ctx.webServer 路由注册 + ctx.sessionPersistence 会话查询）
     - 客户端交互：在同 DOM 节点区域创建 canvas，绘制蓝色块支持点击；点击后控制台打印点击事件与点击时间日志
     - 客户端→宿主调用：点击后 fetch 调用 dsh-session-host HTTP 接口，响应后在控制台打印接口响应数据日志
     - client 参考实现：docs/dsh-tidychat.md（Canvas 绘制 + DOM 链路锚点定位，纯客户端永不触碰 host 数据源之外的 DOM）
   项目结构（基础设计，双包拆分）：
-    - packages/dsh-session-host/: 宿主端插件（dsh-session-base-host），HTTP 接口实现
+    - packages/dsh-session-host/: 宿主端插件（dsh-session-tag-manage-host），HTTP 接口实现
       - 基础设计：/dsh-session-host-test 返回服务端时间
       - 扩展设计：/dsh-session-host-get 按工作区返回 session 会话数量
-    - packages/dsh-session-client/: 客户端插件（dsh-session-base-client），canvas 交互实现
+    - packages/dsh-session-client/: 客户端插件（dsh-session-tag-manage-client），canvas 交互实现
       - 基础设计：同 DOM 节点区域创建 canvas，绘制蓝色块支持点击，点击后控制台打印事件/时间日志
       - 扩展设计：点击后调用 dsh-session-host HTTP 接口，响应后控制台打印接口响应数据日志
     - docs/: 设计文档（design.md 为设计稿；dsh-session-manager.md / dsh-tidychat.md 为宿主/客户端官方 API 核对依据）

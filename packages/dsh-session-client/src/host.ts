@@ -8,6 +8,6 @@
  * 让 loader 条目在宿主侧成功挂载（fiber 存活），
  * 从而被 dsh-client-modules 扫描并编入 window.__DSH_BOOT__ 图。
  *
- * @module dsh-session-base-client/host
+ * @module dsh-session-tag-manage-client/host
  */
 export function apply() {}

@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PACKAGE_NAME = 'dsh-session-base-client'
+const PACKAGE_NAME = 'dsh-session-tag-manage-client'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BUNDLE_PATH = join(ROOT, 'packages', 'dsh-session-client', 'dist', 'index.cjs')
 

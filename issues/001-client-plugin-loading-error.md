@@ -15,9 +15,9 @@ assignees: ''
 1. 在 `cordis.yml` 中同时注册宿主端和客户端插件：
    ```yaml
    - insert:
-       - id: dsh-session-base-host
+       - id: dsh-session-tag-manage-host
          name: file:///<项目根目录>/packages/dsh-session-host/src/index.ts
-       - id: dsh-session-base-client
+       - id: dsh-session-tag-manage-client
          name: file:///<项目根目录>/packages/dsh-session-client/src/index.ts
    ```
 2. 执行 `pnpm run dev` 或 `dsh web --patch cordis.yml`
@@ -70,7 +70,7 @@ file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (wai
       at EntryGroup.update (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:****)
       at async Include._apply (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:****) {
     [errors]: [
-      Error: failed to import loader entry dsh-session-base-client (file:///<项目根目录>/packages/dsh-session-client/src/index.ts): pending (waiting for service: slots)
+      Error: failed to import loader entry dsh-session-tag-manage-client (file:///<项目根目录>/packages/dsh-session-client/src/index.ts): pending (waiting for service: slots)
     ]
   }
 }
@@ -87,7 +87,7 @@ file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (wai
 1. **`cordis.yml` 仅注册宿主端插件**：
    ```yaml
    - insert:
-       - id: dsh-session-base-host
+       - id: dsh-session-tag-manage-host
          name: file:///<项目根目录>/packages/dsh-session-host/src/index.ts
    ```
 

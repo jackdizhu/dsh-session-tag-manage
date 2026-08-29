@@ -1,5 +1,5 @@
 {
-  "name": "dsh-session-base-client",
+  "name": "dsh-session-tag-manage-client",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/host.js",

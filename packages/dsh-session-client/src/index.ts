@@ -4,14 +4,14 @@
  * 在 DOM 节点区域创建 Canvas 元素，绘制蓝色矩形块支持点击，
  * 点击后控制台打印点击事件与时间日志。
  *
- * @module dsh-session-base-client
+ * @module dsh-session-tag-manage-client
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** 日志前缀，便于在浏览器控制台中过滤 */
 const TAG = '[SessionTag]'/** 插件名称，符合 Cordis 插件规范 */
-export const name = 'dsh-session-base-client'
+export const name = 'dsh-session-tag-manage-client'
 
 /** 注入依赖列表 */
 export const inject = ['slots']

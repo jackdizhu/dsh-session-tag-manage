@@ -1,6 +1,6 @@
 # dsh-session-client
 
-> 插件命名：dsh-session-base-client
+> 插件命名：dsh-session-tag-manage-client
 
 ## 概述
 
@@ -44,7 +44,7 @@ pnpm test
 
 ```bash
 # 运行客户端测试
-pnpm test --filter dsh-session-base-client
+pnpm test --filter dsh-session-tag-manage-client
 ```
 
 测试用例位于 `__tests__/index.test.ts`，覆盖：

@@ -2,7 +2,7 @@
 
 ## Overview
 
-客户端插件基础能力。客户端插件（`dsh-session-base-client`）在目标 DOM 节点区域创建 Canvas 元素并绘制蓝色矩形块，支持点击事件，点击后在控制台输出事件类型、点击时间、点击坐标日志。客户端代码位于 `packages/dsh-session-client/`（双包拆分，与宿主端分离）。
+客户端插件基础能力。客户端插件（`dsh-session-tag-manage-client`）在目标 DOM 节点区域创建 Canvas 元素并绘制蓝色矩形块，支持点击事件，点击后在控制台输出事件类型、点击时间、点击坐标日志。客户端代码位于 `packages/dsh-session-client/`（双包拆分，与宿主端分离）。
 
 ## Requirements
 

@@ -15,7 +15,7 @@ assignees: ''
 1. 在 `cordis.yml` 中使用 Windows 绝对路径：
    ```yaml
    - insert:
-       - id: dsh-session-base-host
+       - id: dsh-session-tag-manage-host
          name: <项目根目录>/packages/dsh-session-host/src/index.ts
    ```
 2. 执行 `pnpm run dev` 或 `dsh web --patch cordis.yml`
@@ -53,7 +53,7 @@ AggregateError: loader entries failed to apply
     at EntryGroup.update (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:****)
     ...
     [errors]: [
-      Error: failed to import loader entry dsh-session-base-host (<项目根目录>/packages/dsh-session-host/src/index.ts): Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'c:'
+      Error: failed to import loader entry dsh-session-tag-manage-host (<项目根目录>/packages/dsh-session-host/src/index.ts): Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'c:'
           ...
           code: 'ERR_UNSUPPORTED_ESM_URL_SCHEME'
       }
@@ -70,7 +70,7 @@ Node.js ESM 加载器在 Windows 环境下要求绝对路径使用 `file://` URL
 
 ```yaml
 - insert:
-    - id: dsh-session-base-host
+    - id: dsh-session-tag-manage-host
       name: file:///<项目根目录>/packages/dsh-session-host/src/index.ts
 ```
 

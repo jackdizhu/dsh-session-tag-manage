@@ -15,8 +15,8 @@ assignees: ''
 1. 确保 `cordis.yml` 中注册了客户端插件：
    ```yaml
    - insert:
-       - id: dsh-session-base-client
-         name: dsh-session-base-client
+       - id: dsh-session-tag-manage-client
+         name: dsh-session-tag-manage-client
    ```
 2. 执行 `dsh web`（不带 `--patch` 参数）
 3. DSH 启动失败，报错如下：
@@ -29,7 +29,7 @@ DSH 正常启动并加载客户端插件。
 
 DSH 启动失败，错误信息：
 ```
-Error: Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-base-client\dist\index.js'
+Error: Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-tag-manage-client\dist\index.js'
 ```
 
 ## 环境信息
@@ -47,8 +47,8 @@ file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/d
                 throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause });
                       ^
 
-Error: dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include): failed to import loader entry dsh-session-base-client (dsh-session-base-client): Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-base-client\dist\index.js' imported from <用户主目录>\.dsh\profiles\web\
-Error: Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-base-client\dist\index.js' imported from <用户主目录>\.dsh\profiles\web\
+Error: dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include): failed to import loader entry dsh-session-tag-manage-client (dsh-session-tag-manage-client): Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-tag-manage-client\dist\index.js' imported from <用户主目录>\.dsh\profiles\web\
+Error: Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh-session-tag-manage-client\dist\index.js' imported from <用户主目录>\.dsh\profiles\web\
     at legacyMainResolve (node:internal/modules/esm/resolve:****)
     at packageResolve (node:internal/modules/esm/resolve:****)
     at moduleResolve (node:internal/modules/esm/resolve:****)

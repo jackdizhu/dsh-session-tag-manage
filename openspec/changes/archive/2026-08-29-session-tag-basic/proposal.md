@@ -62,7 +62,7 @@ const mockCtx = {
   },
 } as unknown as Context
 
-describe('dsh-session-base-host 插件', () => {
+describe('dsh-session-tag-manage-host 插件', () => {
   let apply: typeof import('../src/index.ts').apply
 
   beforeEach(async () => {
@@ -73,7 +73,7 @@ describe('dsh-session-base-host 插件', () => {
 
   it('应导出符合 Cordis 插件规范的 name', async () => {
     const mod = await import('../src/index.ts')
-    expect(mod.name).toBe('dsh-session-base-host')
+    expect(mod.name).toBe('dsh-session-tag-manage-host')
   })
 
   it('应导出 inject 数组', async () => {
@@ -123,7 +123,7 @@ describe('dsh-session-base-host 插件', () => {
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
-describe('dsh-session-base-client 插件', () => {
+describe('dsh-session-tag-manage-client 插件', () => {
   let apply: typeof import('../src/index.ts').apply
   let logSpy: ReturnType<typeof vi.spyOn>
   let consoleGroupSpy: ReturnType<typeof vi.spyOn>
@@ -150,7 +150,7 @@ describe('dsh-session-base-client 插件', () => {
 
   it('应导出符合 Cordis 插件规范的 name', async () => {
     const mod = await import('../src/index.ts')
-    expect(mod.name).toBe('dsh-session-base-client')
+    expect(mod.name).toBe('dsh-session-tag-manage-client')
   })
 
   it('应导出 inject 数组', async () => {
@@ -227,10 +227,10 @@ describe('dsh-session-base-client 插件', () => {
 pnpm test
 
 # 运行宿主端测试
-pnpm test --filter dsh-session-base-host
+pnpm test --filter dsh-session-tag-manage-host
 
 # 运行客户端测试
-pnpm test --filter dsh-session-base-client
+pnpm test --filter dsh-session-tag-manage-client
 
 # 生成覆盖率报告
 pnpm test:coverage

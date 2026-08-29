@@ -2,7 +2,7 @@
 
 ## Overview
 
-宿主插件基础能力。宿主插件（`dsh-session-base-host`）通过 Cordis 框架加载，使用 `ctx.webServer` 注册 `/dsh-session-host-test` HTTP 路由，无参返回当前服务端时间戳；并遵循 Cordis 插件规范管理生命周期。宿主代码位于 `packages/dsh-session-host/`（双包拆分，与客户端端分离）。
+宿主插件基础能力。宿主插件（`dsh-session-tag-manage-host`）通过 Cordis 框架加载，使用 `ctx.webServer` 注册 `/dsh-session-host-test` HTTP 路由，无参返回当前服务端时间戳；并遵循 Cordis 插件规范管理生命周期。宿主代码位于 `packages/dsh-session-host/`（双包拆分，与客户端端分离）。
 
 ## Requirements
 

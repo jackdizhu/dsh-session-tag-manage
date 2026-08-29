@@ -1,3 +1,3 @@
 - insert:
-    - id: dsh-session-base-host
-      name: dsh-session-base-host
+    - id: dsh-session-tag-manage-host
+      name: dsh-session-tag-manage-host

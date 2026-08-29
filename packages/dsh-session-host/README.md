@@ -1,6 +1,6 @@
 # dsh-session-host
 
-> 插件命名：dsh-session-base-host
+> 插件命名：dsh-session-tag-manage-host
 
 ## 概述
 
@@ -41,7 +41,7 @@ pnpm test
 
 ```bash
 # 运行宿主端测试
-pnpm test --filter dsh-session-base-host
+pnpm test --filter dsh-session-tag-manage-host
 ```
 
 测试用例位于 `__tests__/index.test.ts`，覆盖：

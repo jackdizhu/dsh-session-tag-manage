@@ -23,7 +23,7 @@ const DSH_PROFILE_DIR = join(DSH_HOME, 'profiles', 'web')
 const PROFILE_PATCH_PATH = join(DSH_PROFILE_DIR, 'cordis.patch.yml')
 
 // 客户端插件 loader 条目 id（与 cordis.patch.yml / wrap-client-bundle.mjs 保持一致）
-const CLIENT_LOADER_ID = 'dsh-session-base-client'
+const CLIENT_LOADER_ID = 'dsh-session-tag-manage-client'
 
 console.log('========================================')
 console.log('DSH Session Tag Manage - 自动注册')
@@ -64,15 +64,15 @@ if (!existsSync(clientDir)) {
  * insert 才能被 dsh-client-modules 编入 window.__DSH_BOOT__ 图。
  *
  * 幂等策略（三段式）：
- *   1) 文件已含 `- id: dsh-session-base-client` 子条目 → 跳过；
+ *   1) 文件已含 `- id: dsh-session-tag-manage-client` 子条目 → 跳过；
  *   2) 存在「空 insert 块」（- insert: 后无缩进子条目，多为 dsh 序列化
  *      剥离后的残留）→ 填充首个空块并清理其余重复空块，避免堆积；
  *   3) 完全不存在 insert → 追加新块。
  *
  * 示例（目标格式，与当前手写条目一致）：
  *   - insert:
- *       - id: dsh-session-base-client
- *         name: dsh-session-base-client
+ *       - id: dsh-session-tag-manage-client
+ *         name: dsh-session-tag-manage-client
  */
 
 /**
@@ -84,7 +84,7 @@ if (!existsSync(clientDir)) {
  * 举例：
  *   - insert:            ← 空块（后无子条目）
  *   - insert:            ← 有效块（有子条目）
- *       - id: dsh-session-base-client
+ *       - id: dsh-session-tag-manage-client
  */
 function findEmptyInsertBlockLines(text) {
   const lines = text.split(/\r?\n/)

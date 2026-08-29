@@ -15,7 +15,7 @@ const mockCtx = {
   },
 } as unknown as Context
 
-describe('dsh-session-base-host 插件', () => {
+describe('dsh-session-tag-manage-host 插件', () => {
   let apply: typeof import('../src/index.ts').apply
 
   beforeEach(async () => {
@@ -26,7 +26,7 @@ describe('dsh-session-base-host 插件', () => {
 
   it('应导出符合 Cordis 插件规范的 name', async () => {
     const mod = await import('../src/index.ts')
-    expect(mod.name).toBe('dsh-session-base-host')
+    expect(mod.name).toBe('dsh-session-tag-manage-host')
   })
 
   it('应导出 inject 数组', async () => {
