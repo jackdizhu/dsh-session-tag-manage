@@ -63,15 +63,51 @@ if (!existsSync(clientDir)) {
  * dsh.bundle），不会进入 bundles，需在 profile 的 cordis.patch.yml 手动
  * insert 才能被 dsh-client-modules 编入 window.__DSH_BOOT__ 图。
  *
+ * 幂等策略（三段式）：
+ *   1) 文件已含 `- id: dsh-session-base-client` 子条目 → 跳过；
+ *   2) 存在「空 insert 块」（- insert: 后无缩进子条目，多为 dsh 序列化
+ *      剥离后的残留）→ 填充首个空块并清理其余重复空块，避免堆积；
+ *   3) 完全不存在 insert → 追加新块。
+ *
  * 示例（目标格式，与当前手写条目一致）：
  *   - insert:
  *       - id: dsh-session-base-client
  *         name: dsh-session-base-client
  */
+
+/**
+ * 定位 YAML 文本中的空 insert 块行号集合。
+ *
+ * 定义：`- insert:` 行之后（跳过注释与空行）若无缩进子条目
+ * （如 `    - id: xxx`），则该块为空，即 dsh 重新序列化后残留的空数组。
+ *
+ * 举例：
+ *   - insert:            ← 空块（后无子条目）
+ *   - insert:            ← 有效块（有子条目）
+ *       - id: dsh-session-base-client
+ */
+function findEmptyInsertBlockLines(text) {
+  const lines = text.split(/\r?\n/)
+  const result = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^[ \t]*- insert:[ \t]*$/.test(lines[i])) continue
+    // 向后扫描：跳过注释与空行，遇缩进子条目则非空，遇顶层元素或结尾则结束
+    let isEmpty = true
+    for (let j = i + 1; j < lines.length; j++) {
+      const trimmed = lines[j].trim()
+      if (trimmed === '' || trimmed.startsWith('#')) continue
+      if (/^[ \t]+/.test(lines[j])) isEmpty = false
+      break
+    }
+    if (isEmpty) result.push(i)
+  }
+  return result
+}
+
 function ensureClientPatchEntry() {
   console.log('[4/5] 校验 profile patch（客户端插件条目）...')
 
-  // 幂等判断：文件中已存在对应 loader 条目则跳过，避免重复写入
+  // 幂等判断①：已存在目标 id 条目则跳过，避免重复写入
   const existing = existsSync(PROFILE_PATCH_PATH)
     ? readFileSync(PROFILE_PATCH_PATH, 'utf8')
     : ''
@@ -80,6 +116,31 @@ function ensureClientPatchEntry() {
     return
   }
 
+  // 目录兜底（正常情况下 dsh plugin add 已初始化 profile）
+  mkdirSync(DSH_PROFILE_DIR, { recursive: true })
+
+  // 幂等判断②：存在空 insert 块 → 填充首个并移除其余，防止重复堆积
+  const emptyInsertLines = findEmptyInsertBlockLines(existing)
+  if (emptyInsertLines.length > 0) {
+    const lines = existing.split(/\r?\n/)
+    const dropLines = new Set(emptyInsertLines.slice(1))
+    const rebuilt = []
+    for (let idx = 0; idx < lines.length; idx++) {
+      if (idx === emptyInsertLines[0]) {
+        // 首个空块：写入目标 loader 条目
+        rebuilt.push(lines[idx])
+        rebuilt.push(`    - id: ${CLIENT_LOADER_ID}`)
+        rebuilt.push(`      name: ${CLIENT_LOADER_ID}`)
+      } else if (!dropLines.has(idx)) {
+        rebuilt.push(lines[idx])
+      }
+    }
+    writeFileSync(PROFILE_PATCH_PATH, rebuilt.join('\n'))
+    console.log(`[完成] 已填充客户端插件条目并清理重复空块: ${PROFILE_PATCH_PATH}`)
+    return
+  }
+
+  // 幂等判断③：完全不存在 insert → 追加新块（保留原逻辑）
   const entry = [
     '',
     '# 客户端插件（由 auto-register 脚本幂等维护）：',
@@ -88,9 +149,6 @@ function ensureClientPatchEntry() {
     `      name: ${CLIENT_LOADER_ID}`,
     '',
   ].join('\n')
-
-  // 目录兜底（正常情况下 dsh plugin add 已初始化 profile）
-  mkdirSync(DSH_PROFILE_DIR, { recursive: true })
 
   // 拼接后整体写回，避免 appendFileSync 的换行边界问题
   const updated = existing === '' || existing.endsWith('\n')
