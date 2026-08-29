@@ -69,7 +69,7 @@ Error: Cannot find package '<用户主目录>\.dsh\profiles\web\node_modules\dsh
 
 2. **或先安装插件到 DSH profile**：
    ```bash
-   dsh plugin add <项目根目录>/packages/dsh-session-client
+   dsh plugin add <项目根目录>/packages/dsh-plugin-client-template
    dsh web
    ```
 

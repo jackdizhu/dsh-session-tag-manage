@@ -1,6 +1,6 @@
-# dsh-session-host
+# dsh-plugin-host-template
 
-> 插件命名：dsh-session-base-host
+> 插件命名：dsh-plugin-host-template
 
 ## 概述
 
@@ -10,14 +10,14 @@ DSH 会话管理插件的宿主端实现，通过 `ctx.webServer` 注册 HTTP �
 
 ### 基础设计
 
-1. **HTTP 接口**：`/dsh-session-host-test`
+1. **HTTP 接口**：`/dsh-plugin-host-template-test`
    - 参数：无
    - 返回：`{ serverTime: <epoch_ms> }`（当前服务端时间戳）
    - 参考实现：`docs/dsh-session-manager.md`
 
 ### 扩展设计
 
-2. **HTTP 接口**：`/dsh-session-host-get`
+2. **HTTP 接口**：`/dsh-plugin-host-template-get`
    - 参数：工作区 ID
    - 返回：当前工作区 `session` 会话数量
 
@@ -41,7 +41,7 @@ pnpm test
 
 ```bash
 # 运行宿主端测试
-pnpm test --filter dsh-session-base-host
+pnpm test --filter dsh-plugin-host-template
 ```
 
 测试用例位于 `__tests__/index.test.ts`，覆盖：

@@ -22,9 +22,9 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PACKAGE_NAME = 'dsh-session-base-client'
+const PACKAGE_NAME = 'dsh-plugin-client-template'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const BUNDLE_PATH = join(ROOT, 'packages', 'dsh-session-client', 'dist', 'index.cjs')
+const BUNDLE_PATH = join(ROOT, 'packages', 'dsh-plugin-client-template', 'dist', 'index.cjs')
 
 const raw = readFileSync(BUNDLE_PATH, 'utf8').trim()
 if (raw.includes('window.__ModuleLoader__.load(')) {

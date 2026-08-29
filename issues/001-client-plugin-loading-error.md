@@ -16,9 +16,9 @@ assignees: ''
    ```yaml
    - insert:
        - id: dsh-session-base-host
-         name: file:///<项目根目录>/packages/dsh-session-host/src/index.ts
+         name: file:///<项目根目录>/packages/dsh-plugin-host-template/src/index.ts
        - id: dsh-session-base-client
-         name: file:///<项目根目录>/packages/dsh-session-client/src/index.ts
+         name: file:///<项目根目录>/packages/dsh-plugin-client-template/src/index.ts
    ```
 2. 执行 `pnpm run dev` 或 `dsh web --patch cordis.yml`
 3. DSH 启动失败，报错如下：
@@ -32,7 +32,7 @@ DSH 正常启动，宿主端插件注册 HTTP 路由，客户端插件在浏览�
 DSH 启动失败，错误信息：
 ```
 Error: dsh: plugin tree failed to load: dsh: 1 entry did not activate
-file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (waiting for service: slots)
+file:///<项目根目录>/packages/dsh-plugin-client-template/src/index.ts: pending (waiting for service: slots)
 ```
 
 客户端插件在 Node.js 宿主上下文中加载，但 `slots` 服务仅在浏览器客户端中可用。
@@ -56,12 +56,12 @@ file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/d
                       ^
 
 Error: dsh: plugin tree failed to load: dsh: 1 entry did not activate
-file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (waiting for service: slots)
+file:///<项目根目录>/packages/dsh-plugin-client-template/src/index.ts: pending (waiting for service: slots)
     at boot (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:****)
     at async runProfile (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/lib/profile-boot-****.js:****)
     at async file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/lib/bin.js:**** {
   [cause]: Error: dsh: 1 entry did not activate
-  file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (waiting for service: slots)
+  file:///<项目根目录>/packages/dsh-plugin-client-template/src/index.ts: pending (waiting for service: slots)
       at assertEntriesActivated (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:****)
       at boot (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:****)
       at async runProfile (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/lib/profile-boot-****.js:****)
@@ -70,7 +70,7 @@ file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (wai
       at EntryGroup.update (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:****)
       at async Include._apply (file:///<用户主目录>/AppData/Local/nvm/v24.13.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:****) {
     [errors]: [
-      Error: failed to import loader entry dsh-session-base-client (file:///<项目根目录>/packages/dsh-session-client/src/index.ts): pending (waiting for service: slots)
+      Error: failed to import loader entry dsh-session-base-client (file:///<项目根目录>/packages/dsh-plugin-client-template/src/index.ts): pending (waiting for service: slots)
     ]
   }
 }
@@ -88,12 +88,12 @@ file:///<项目根目录>/packages/dsh-session-client/src/index.ts: pending (wai
    ```yaml
    - insert:
        - id: dsh-session-base-host
-         name: file:///<项目根目录>/packages/dsh-session-host/src/index.ts
+         name: file:///<项目根目录>/packages/dsh-plugin-host-template/src/index.ts
    ```
 
 2. **客户端插件通过 `dsh plugin add` 安装**：
    ```bash
-   dsh plugin add <项目根目录>/packages/dsh-session-client
+   dsh plugin add <项目根目录>/packages/dsh-plugin-client-template
    ```
 
 3. **或使用独立的 `dsh.plugin` 配置**：

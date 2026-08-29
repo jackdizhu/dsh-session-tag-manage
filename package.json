@@ -1,5 +1,5 @@
 {
-  "name": "dsh-session-tag-manage",
+  "name": "dsh-plugin-create-template",
   "version": "0.1.0",
   "private": true,
   "type": "module",

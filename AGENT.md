@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-本项目是基于 DeepSeek Harness (DSH) 插件系统构建的会话管理插件 **dsh-session-tag-manage**，帮助用户快速识别哪些会话需要重点跟进。
+本项目是基于 DeepSeek Harness (DSH) 插件系统构建的会话管理插件 **dsh-plugin-create-template**，帮助用户快速识别哪些会话需要重点跟进。
 
 - 宿主框架：DeepSeek Harness (DSH) 插件系统（一切皆插件）
 - 语言：TypeScript 5（ESM，package.json `type: module`）
@@ -10,7 +10,7 @@
 - 配置 Schema：Schemastery（`@deepseek-ai/schemastery`）
 - 客户端：React + 客户端槽位（slots / clientRuntime / SessionStandardProps）
 - 类型化 RPC：Typert RPC（构建时生成客户端桩 + 宿主服务桩）
-- 双包拆分：`packages/dsh-session-host`（宿主）/ `packages/dsh-session-client`（客户端）
+- 双包拆分：`packages/dsh-plugin-host-template`（宿主）/ `packages/dsh-plugin-client-template`（客户端）
 
 ## 核心操作指令
 
@@ -31,7 +31,7 @@
 ## 安全与合规要求
 
 - 敏感凭证：API 密钥、数据库连接信息必须从环境变量读取，严禁硬编码。
-- 接口请求：客户端→宿主调用必须通过类型化 Typert RPC 或宿主注册的 `/dsh-session-host-*` HTTP 接口，禁止绕过封装直接访问。
+- 接口请求：客户端→宿主调用必须通过类型化 Typert RPC 或宿主注册的 `/dsh-plugin-host-template-*` HTTP 接口，禁止绕过封装直接访问。
 - DOM 操作：客户端仅操作自身锚点定位的 DOM 节点区域，永不触碰宿主数据源之外的 DOM。
 
 ## 注意事项（红线）

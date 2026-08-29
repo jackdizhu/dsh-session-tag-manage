@@ -1,6 +1,6 @@
-# dsh-session-client
+# dsh-plugin-client-template
 
-> 插件命名：dsh-session-base-client
+> 插件命名：dsh-plugin-client-template
 
 ## 概述
 
@@ -21,7 +21,7 @@ DSH 会话管理插件的客户端实现，在 DOM 节点区域创建 Canvas 元
 
 ### 扩展设计
 
-5. **HTTP 接口调用**：点击后调用 `dsh-session-host` HTTP 接口
+5. **HTTP 接口调用**：点击后调用 `dsh-plugin-host-template` HTTP 接口
 6. **响应日志**：接口响应后控制台打印响应数据
 
 ## 开发
@@ -44,7 +44,7 @@ pnpm test
 
 ```bash
 # 运行客户端测试
-pnpm test --filter dsh-session-base-client
+pnpm test --filter dsh-plugin-client-template
 ```
 
 测试用例位于 `__tests__/index.test.ts`，覆盖：

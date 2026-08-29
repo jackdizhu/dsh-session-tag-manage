@@ -3,16 +3,16 @@ import { defineConfig } from 'tsdown'
 export default defineConfig([
   // 宿主端产物（ESM）
   {
-    entry: ['packages/dsh-session-host/src/index.ts'],
-    outDir: 'packages/dsh-session-host/dist',
+    entry: ['packages/dsh-plugin-host-template/src/index.ts'],
+    outDir: 'packages/dsh-plugin-host-template/dist',
     format: 'esm',
     target: 'es2024',
     external: ['@deepseek-ai/*'],
   },
   // 客户端插件 Node 半区（ESM）：空插件，让 loader 条目在宿主侧挂载成功
   {
-    entry: ['packages/dsh-session-client/src/host.ts'],
-    outDir: 'packages/dsh-session-client/dist',
+    entry: ['packages/dsh-plugin-client-template/src/host.ts'],
+    outDir: 'packages/dsh-plugin-client-template/dist',
     format: 'esm',
     target: 'es2024',
   },
@@ -21,8 +21,8 @@ export default defineConfig([
   //   window.__ModuleLoader__.load({ id, factory(require) { ... return module.exports } })
   // 形式自注册；tsdown 不支持 footer，注册包装由 scripts/wrap-client-bundle.mjs 在构建后统一拼接。
   {
-    entry: ['packages/dsh-session-client/src/index.ts'],
-    outDir: 'packages/dsh-session-client/dist',
+    entry: ['packages/dsh-plugin-client-template/src/index.ts'],
+    outDir: 'packages/dsh-plugin-client-template/dist',
     format: 'cjs',
     target: 'es2024',
   },

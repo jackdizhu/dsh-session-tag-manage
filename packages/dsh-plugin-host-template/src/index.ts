@@ -1,16 +1,16 @@
 /**
  * 宿主端插件入口
  *
- * 通过 ctx.webServer 注册 /dsh-session-host-test HTTP 路由，
+ * 通过 ctx.webServer 注册 /dsh-plugin-host-template-test HTTP 路由，
  * 无参返回当前服务端时间戳。
  *
- * @module dsh-session-base-host
+ * @module dsh-plugin-host-template
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 
 /** 插件名称，符合 Cordis 插件规范 */
-export const name = 'dsh-session-base-host'
+export const name = 'dsh-plugin-host-template'
 
 /** 注入依赖列表 */
 export const inject = ['webServer']
@@ -25,7 +25,7 @@ export function apply(ctx: Context) {
   // 因此需要自行 writeHead + end 输出 JSON。
   ctx.webServer.register({
     kind: 'exact',
-    path: '/dsh-session-host-test',
+    path: '/dsh-plugin-host-template-test',
     handler: (_req, res) => {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify({ serverTime: Date.now() }))

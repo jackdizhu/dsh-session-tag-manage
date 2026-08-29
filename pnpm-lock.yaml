@@ -24,9 +24,9 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(jsdom@30.0.1)
 
-  packages/dsh-session-client: {}
+  packages/dsh-plugin-client-template: {}
 
-  packages/dsh-session-host: {}
+  packages/dsh-plugin-host-template: {}
 
 packages:
 

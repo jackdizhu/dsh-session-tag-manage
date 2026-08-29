@@ -1,4 +1,4 @@
-# dsh-session-tag-manage
+# dsh-plugin-create-template
 
 DeepSeek DSH 插件 - 会话管理，帮助用户快速识别哪些会话需要重点跟进。
 
@@ -6,25 +6,25 @@ DeepSeek DSH 插件 - 会话管理，帮助用户快速识别哪些会话需要�
 
 本项目是基于 DeepSeek Harness (DSH) 插件系统构建的会话管理插件，采用双包拆分架构：
 
-- **宿主端插件** (`dsh-session-base-host`)：HTTP 接口实现
-- **客户端插件** (`dsh-session-base-client`)：Canvas 交互实现
+- **宿主端插件** (`dsh-plugin-host-template`)：HTTP 接口实现
+- **客户端插件** (`dsh-plugin-client-template`)：Canvas 交互实现
 
 ## 目录结构
 
 ```
-dsh-session-tag-manage/
+dsh-plugin-create-template/
 ├── package.json                    # 项目配置 + workspace 声明
 ├── cordis.yml                      # 本地开发 patch 注册（宿主端）
 ├── tsconfig.json                   # TypeScript 基础配置
 ├── tsdown.config.ts                # 构建配置（双产物）
 ├── vitest.config.ts                # 测试配置
 ├── packages/
-│   ├── dsh-session-host/
+│   ├── dsh-plugin-host-template/
 │   │   ├── package.json            # 宿主包配置
 │   │   ├── cordis.patch.yml        # 插件注册配置
 │   │   ├── src/index.ts            # 宿主入口：HTTP 路由注册
 │   │   └── dist/                   # 构建产物
-│   └── dsh-session-client/
+│   └── dsh-plugin-client-template/
 │       ├── package.json            # 客户端包配置
 │       ├── src/index.ts            # 客户端入口：Canvas 交互
 │       └── dist/                   # 构建产物
@@ -65,10 +65,10 @@ pnpm run register
 
 # 或手动执行
 # 1. 安装宿主端插件
-dsh plugin add <项目根目录>/packages/dsh-session-host
+dsh plugin add <项目根目录>/packages/dsh-plugin-host-template
 
 # 2. 安装客户端插件
-dsh plugin add <项目根目录>/packages/dsh-session-client
+dsh plugin add <项目根目录>/packages/dsh-plugin-client-template
 
 # 3. 重启 DSH
 dsh web
@@ -92,8 +92,8 @@ pnpm build
 ```
 
 构建产物：
-- `packages/dsh-session-host/dist/index.js`（ESM，Node.js）
-- `packages/dsh-session-client/dist/index.cjs`（CJS，Browser）
+- `packages/dsh-plugin-host-template/dist/index.js`（ESM，Node.js）
+- `packages/dsh-plugin-client-template/dist/index.cjs`（CJS，Browser）
 
 ## 测试
 
@@ -102,10 +102,10 @@ pnpm build
 pnpm test
 
 # 运行宿主端测试
-pnpm test --filter dsh-session-base-host
+pnpm test --filter dsh-plugin-host-template
 
 # 运行客户端测试
-pnpm test --filter dsh-session-base-client
+pnpm test --filter dsh-plugin-client-template
 
 # 生成覆盖率报告
 pnpm test:coverage
@@ -119,13 +119,13 @@ pnpm typecheck
 
 ## 插件配置说明
 
-### 宿主端插件 (`dsh-session-base-host`)
+### 宿主端插件 (`dsh-plugin-host-template`)
 
 - **注册方式**：通过 `cordis.patch.yml` 或 `cordis.yml` 配合 `--patch` 参数
-- **HTTP 接口**：`/dsh-session-host-test`
+- **HTTP 接口**：`/dsh-plugin-host-template-test`
 - **返回格式**：`{ "serverTime": <epoch_ms> }`
 
-### 客户端插件 (`dsh-session-base-client`)
+### 客户端插件 (`dsh-plugin-client-template`)
 
 - **加载方式**：通过 `dsh.client` 配置，由 DSH 客户端运行时加载
 - **功能**：在 DOM 节点区域创建 Canvas 元素，绘制蓝色块支持点击
@@ -141,12 +141,11 @@ pnpm typecheck
 
 ## 相关文档
 
-- [宿主端插件 README](packages/dsh-session-host/README.md)
-- [客户端插件 README](packages/dsh-session-client/README.md)
+- [宿主端插件 README](packages/dsh-plugin-host-template/README.md)
+- [客户端插件 README](packages/dsh-plugin-client-template/README.md)
 - [设计文档](openspec/changes/session-tag-basic/design.md)
 - [提案文档](openspec/changes/session-tag-basic/proposal.md)
 
 ## 许可证
 
 MIT
-

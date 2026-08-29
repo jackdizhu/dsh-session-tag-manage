@@ -23,7 +23,7 @@ const DSH_PROFILE_DIR = join(DSH_HOME, 'profiles', 'web')
 const PROFILE_PATCH_PATH = join(DSH_PROFILE_DIR, 'cordis.patch.yml')
 
 // 客户端插件 loader 条目 id（与 cordis.patch.yml / wrap-client-bundle.mjs 保持一致）
-const CLIENT_LOADER_ID = 'dsh-session-base-client'
+const CLIENT_LOADER_ID = 'dsh-plugin-client-template'
 
 console.log('========================================')
 console.log('DSH Session Tag Manage - 自动注册')
@@ -42,16 +42,16 @@ try {
 }
 
 // 检查插件目录是否存在
-const hostDir = join(PROJECT_ROOT, 'packages', 'dsh-session-host')
-const clientDir = join(PROJECT_ROOT, 'packages', 'dsh-session-client')
+const hostDir = join(PROJECT_ROOT, 'packages', 'dsh-plugin-host-template')
+const clientDir = join(PROJECT_ROOT, 'packages', 'dsh-plugin-client-template')
 
 if (!existsSync(hostDir)) {
-  console.error('[错误] 未找到宿主端插件目录: packages/dsh-session-host')
+  console.error('[错误] 未找到宿主端插件目录: packages/dsh-plugin-host-template')
   process.exit(1)
 }
 
 if (!existsSync(clientDir)) {
-  console.error('[错误] 未找到客户端插件目录: packages/dsh-session-client')
+  console.error('[错误] 未找到客户端插件目录: packages/dsh-plugin-client-template')
   process.exit(1)
 }
 
@@ -65,8 +65,8 @@ if (!existsSync(clientDir)) {
  *
  * 示例（目标格式，与当前手写条目一致）：
  *   - insert:
- *       - id: dsh-session-base-client
- *         name: dsh-session-base-client
+ *       - id: dsh-plugin-client-template
+ *         name: dsh-plugin-client-template
  */
 function ensureClientPatchEntry() {
   console.log('[4/5] 校验 profile patch（客户端插件条目）...')

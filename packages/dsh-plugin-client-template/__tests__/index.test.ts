@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
-describe('dsh-session-base-client 插件', () => {
+describe('dsh-plugin-client-template 插件', () => {
   let apply: typeof import('../src/index.ts').apply
   let logSpy: ReturnType<typeof vi.spyOn>
   let consoleGroupSpy: ReturnType<typeof vi.spyOn>
@@ -40,7 +40,7 @@ describe('dsh-session-base-client 插件', () => {
 
   it('应导出符合 Cordis 插件规范的 name', async () => {
     const mod = await import('../src/index.ts')
-    expect(mod.name).toBe('dsh-session-base-client')
+    expect(mod.name).toBe('dsh-plugin-client-template')
   })
 
   it('应导出 inject 数组', async () => {

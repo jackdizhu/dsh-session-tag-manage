@@ -5,7 +5,7 @@
 # 不能用 file:// 源码路径——那会使客户端插件无法被编入 __DSH_BOOT__。
 # 修改源码后执行 pnpm build 再启动。
 - insert:
-    - id: dsh-session-base-host
-      name: dsh-session-base-host
-    - id: dsh-session-base-client
-      name: dsh-session-base-client
+    - id: dsh-plugin-host-template
+      name: dsh-plugin-host-template
+    - id: dsh-plugin-client-template
+      name: dsh-plugin-client-template

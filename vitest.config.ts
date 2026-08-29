@@ -13,8 +13,8 @@ export default defineConfig({
     },
     // 为不同包配置不同的测试环境
     environmentMatchGlob: [
-      ['packages/dsh-session-client/**', 'jsdom'],
-      ['packages/dsh-session-host/**', 'node'],
+      ['packages/dsh-plugin-client-template/**', 'jsdom'],
+      ['packages/dsh-plugin-host-template/**', 'node'],
     ],
   },
   resolve: {

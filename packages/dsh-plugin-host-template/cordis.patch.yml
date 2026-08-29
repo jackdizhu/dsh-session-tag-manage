@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-plugin-host-template
+      name: dsh-plugin-host-template
