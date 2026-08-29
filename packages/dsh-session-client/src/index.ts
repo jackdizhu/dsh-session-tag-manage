@@ -46,13 +46,13 @@ function logSessionNodes(): void {
   const sidebarWorkspaces = safeQuery('[data-sidebar-workspaces]')
 
   console.groupCollapsed(`${TAG} DOM 节点扫描报告`)
-  console.warn('session-row 节点数:', sessionRows.length)
-  console.warn('chat-anchor-key 节点数:', chatAnchors.length)
-  console.warn('conversation-scroll 容器:', conversationScroll ? '✅ 找到' : '❌ 未找到')
-  console.warn('sidebar-workspaces 容器:', sidebarWorkspaces ? '✅ 找到' : '❌ 未找到')
+  console.log('session-row 节点数:', sessionRows.length)
+  console.log('chat-anchor-key 节点数:', chatAnchors.length)
+  console.log('conversation-scroll 容器:', conversationScroll ? '✅ 找到' : '❌ 未找到')
+  console.log('sidebar-workspaces 容器:', sidebarWorkspaces ? '✅ 找到' : '❌ 未找到')
 
   if (sessionRows.length > 0) {
-    console.warn('session-row 节点详情:', sessionRows.map(el => ({
+    console.log('session-row 节点详情:', sessionRows.map(el => ({
       tagName: el.tagName,
       id: el.id,
       className: el.className,
@@ -62,7 +62,7 @@ function logSessionNodes(): void {
   }
 
   if (chatAnchors.length > 0) {
-    console.warn('chat-anchor-key 节点详情:', chatAnchors.slice(0, 5).map(el => ({
+    console.log('chat-anchor-key 节点详情:', chatAnchors.slice(0, 5).map(el => ({
       tagName: el.tagName,
       anchorKey: el.getAttribute('data-chat-anchor-key'),
       flowKind: el.getAttribute('data-chat-flow-kind'),
@@ -78,7 +78,7 @@ function logSessionNodes(): void {
       if (attr.name.startsWith('data-')) dataAttrs.add(attr.name)
     })
   })
-  console.warn('页面上所有 data-* 属性:', Array.from(dataAttrs).sort())
+  console.log('页面上所有 data-* 属性:', Array.from(dataAttrs).sort())
   console.groupEnd()
 }
 
@@ -87,19 +87,19 @@ function logSessionNodes(): void {
  * @param ctx - 客户端上下文
  */
 export function apply(ctx: ClientContext) {
-  console.warn(`${TAG} 插件 apply 函数被调用`)  
-  console.warn(`${TAG} ctx 上下文:`, ctx)
+  console.log(`${TAG} 插件 apply 函数被调用`)  
+  console.log(`${TAG} ctx 上下文:`, ctx)
 
   // 检查 ctx 上可用的服务
-  console.warn(`${TAG} ctx.slots 可用:`, !!ctx.slots)
+  console.log(`${TAG} ctx.slots 可用:`, !!ctx.slots)
   if (ctx.slots) {
-    console.warn(`${TAG} ctx.slots 类型:`, typeof ctx.slots)
-    console.warn(`${TAG} ctx.slots 的属性:`, Object.keys(ctx.slots))
+    console.log(`${TAG} ctx.slots 类型:`, typeof ctx.slots)
+    console.log(`${TAG} ctx.slots 的属性:`, Object.keys(ctx.slots))
   }
 
   // 等待 DOM 就绪后执行
   const initPlugin = () => {
-    console.warn(`${TAG} initPlugin 开始执行，当前 URL:`, window.location.href)
+    console.log(`${TAG} initPlugin 开始执行，当前 URL:`, window.location.href)
 
     // 打印当前 DOM 快照
     logSessionNodes()
@@ -116,14 +116,14 @@ export function apply(ctx: ClientContext) {
     if (ctx2d) {
       ctx2d.fillStyle = '#3b82f6'
       ctx2d.fillRect(0, 0, 100, 60)
-      console.warn(`${TAG} Canvas 2D 绘制完成`)
+      console.log(`${TAG} Canvas 2D 绘制完成`)
     } else {
-      console.warn(`${TAG} 无法获取 Canvas 2D 上下文`)
+      console.log(`${TAG} 无法获取 Canvas 2D 上下文`)
     }
 
     // 绑定点击事件
     canvas.addEventListener('click', (event) => {
-      console.warn(`${TAG} Canvas clicked:`, {
+      console.log(`${TAG} Canvas clicked:`, {
         type: event.type,
         time: new Date().toLocaleString(),
         x: event.offsetX,
@@ -133,11 +133,11 @@ export function apply(ctx: ClientContext) {
 
     // 挂载 Canvas 到 body（fixed 定位，无需依赖特定容器）
     document.body.appendChild(canvas)
-    console.warn(`${TAG} Canvas 已挂载到 body（右下角固定定位）`)
+    console.log(`${TAG} Canvas 已挂载到 body（右下角固定定位）`)
 
     // 使用 MutationObserver 监听会话节点变化
     const observerTarget = safeQuery('[data-conversation-scroll]') ?? document.body
-    console.warn(`${TAG} MutationObserver 监听目标:`, {
+    console.log(`${TAG} MutationObserver 监听目标:`, {
       tagName: observerTarget.tagName,
       id: observerTarget.id,
       className: observerTarget.className,
@@ -148,7 +148,7 @@ export function apply(ctx: ClientContext) {
       const removedNodes = mutations.flatMap(m => Array.from(m.removedNodes))
       
       if (addedNodes.length > 0 || removedNodes.length > 0) {
-        console.warn(`${TAG} DOM 变化检测:`, {
+        console.log(`${TAG} DOM 变化检测:`, {
           新增节点数: addedNodes.length,
           删除节点数: removedNodes.length,
           sessionRow数量: safeQueryAll('[data-session-row]').length,
@@ -161,14 +161,14 @@ export function apply(ctx: ClientContext) {
       childList: true,
       subtree: true,
     })
-    console.warn(`${TAG} MutationObserver 已启动`)
+    console.log(`${TAG} MutationObserver 已启动`)
 
     // 定时兜底：每 5 秒打印一次 DOM 状态
     const intervalId = setInterval(() => {
       const sessionRows = safeQueryAll('[data-session-row]').length
       const chatAnchors = safeQueryAll('[data-chat-anchor-key]').length
       if (sessionRows > 0 || chatAnchors > 0) {
-        console.warn(`${TAG} 定时检查 - session-row: ${sessionRows}, chat-anchor: ${chatAnchors}`)
+        console.log(`${TAG} 定时检查 - session-row: ${sessionRows}, chat-anchor: ${chatAnchors}`)
       }
     }, 5000)
 
@@ -177,12 +177,12 @@ export function apply(ctx: ClientContext) {
       observer.disconnect()
       clearInterval(intervalId)
       canvas.remove()
-      console.warn(`${TAG} 插件已清理`)
+      console.log(`${TAG} 插件已清理`)
     }
   }
 
   // DSH 客户端运行时在 DOM 就绪后才加载插件，直接同步执行
   // readyState 信息仅作日志输出，不阻塞执行
-  console.warn(`${TAG} 当前 readyState: ${document.readyState}`)
+  console.log(`${TAG} 当前 readyState: ${document.readyState}`)
   initPlugin()
 }

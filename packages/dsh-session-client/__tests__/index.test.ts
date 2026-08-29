@@ -10,15 +10,14 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
 describe('dsh-session-base-client 插件', () => {
   let apply: typeof import('../src/index.ts').apply
-  let consoleSpy: ReturnType<typeof vi.spyOn>
-  let warnSpy: ReturnType<typeof vi.spyOn>
+  let logSpy: ReturnType<typeof vi.spyOn>
   let consoleGroupSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     consoleGroupSpy = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'groupEnd').mockImplementation(() => {})
 
@@ -33,8 +32,7 @@ describe('dsh-session-base-client 插件', () => {
   })
 
   afterEach(() => {
-    consoleSpy.mockRestore()
-    warnSpy.mockRestore()
+    logSpy.mockRestore()
     consoleGroupSpy.mockRestore()
     vi.restoreAllMocks()
     document.body.innerHTML = ''
@@ -95,32 +93,32 @@ describe('dsh-session-base-client 插件', () => {
     const ctx = { slots: { register: vi.fn() } } as unknown as ClientContext
     apply(ctx)
 
-    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
-    const hasContextLog = allWarns.some(log => String(log).includes('ctx 上下文'))
+    const allLogs = logSpy.mock.calls.map(c => c.join(' '))
+    const hasContextLog = allLogs.some(log => String(log).includes('ctx 上下文'))
     expect(hasContextLog).toBe(true)
   })
 
   it('apply 应打印 slots 可用性', () => {
     apply({ slots: {} } as ClientContext)
 
-    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
-    const hasSlotsLog = allWarns.some(log => String(log).includes('ctx.slots 可用'))
+    const allLogs = logSpy.mock.calls.map(c => c.join(' '))
+    const hasSlotsLog = allLogs.some(log => String(log).includes('ctx.slots 可用'))
     expect(hasSlotsLog).toBe(true)
   })
 
   it('apply 应打印挂载日志', () => {
     apply({} as ClientContext)
 
-    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
-    const hasMountLog = allWarns.some(log => String(log).includes('右下角固定定位'))
+    const allLogs = logSpy.mock.calls.map(c => c.join(' '))
+    const hasMountLog = allLogs.some(log => String(log).includes('右下角固定定位'))
     expect(hasMountLog).toBe(true)
   })
 
   it('apply 应启动 MutationObserver', () => {
     apply({} as ClientContext)
 
-    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
-    const hasObserverLog = allWarns.some(log => String(log).includes('MutationObserver 已启动'))
+    const allLogs = logSpy.mock.calls.map(c => c.join(' '))
+    const hasObserverLog = allLogs.some(log => String(log).includes('MutationObserver 已启动'))
     expect(hasObserverLog).toBe(true)
   })
 
