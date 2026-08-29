@@ -2,10 +2,16 @@
   "name": "dsh-session-base-client",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/host.js",
+  "exports": {
+    ".": "./dist/host.js",
+    "./client": "./dist/index.cjs",
+    "./package.json": "./package.json"
+  },
   "dsh": {
-    "client": "./dist/index.js"
+    "client": {
+      "platform": "web"
+    }
   },
   "peerDependencies": {},
   "dependencies": {}

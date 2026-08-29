@@ -8,31 +8,36 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
-// 模拟 DOM 环境
-const mockAppendChild = vi.fn()
-const mockContainer = {
-  appendChild: mockAppendChild,
-} as unknown as Element
-
-// 模拟 querySelector
-Object.defineProperty(document, 'querySelector', {
-  value: vi.fn().mockReturnValue(mockContainer),
-  writable: true,
-})
-
 describe('dsh-session-base-client 插件', () => {
   let apply: typeof import('../src/index.ts').apply
   let consoleSpy: ReturnType<typeof vi.spyOn>
+  let warnSpy: ReturnType<typeof vi.spyOn>
+  let consoleGroupSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     vi.clearAllMocks()
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    consoleGroupSpy = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'groupEnd').mockImplementation(() => {})
+
+    // 清理之前的 cleanup 函数
+    delete (window as any).__sessionTagCleanup
+
+    // 清理之前测试残留的 DOM
+    document.body.innerHTML = ''
+
     const mod = await import('../src/index.ts')
     apply = mod.apply
   })
 
   afterEach(() => {
     consoleSpy.mockRestore()
+    warnSpy.mockRestore()
+    consoleGroupSpy.mockRestore()
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
   })
 
   it('应导出符合 Cordis 插件规范的 name', async () => {
@@ -45,63 +50,91 @@ describe('dsh-session-base-client 插件', () => {
     expect(mod.inject).toContain('slots')
   })
 
-  it('apply 函数应创建 Canvas 元素并追加到容器', () => {
+  it('apply 函数应创建 Canvas 元素并固定定位到右下角', () => {
     apply({} as ClientContext)
 
-    expect(mockAppendChild).toHaveBeenCalledOnce()
-    const canvas = mockAppendChild.mock.calls[0][0] as HTMLCanvasElement
-    expect(canvas.tagName).toBe('CANVAS')
+    const canvas = document.body.querySelector('canvas')
+    expect(canvas).not.toBeNull()
+    expect(canvas!.tagName).toBe('CANVAS')
   })
 
   it('Canvas 应具有正确的尺寸（100x60）', () => {
     apply({} as ClientContext)
 
-    const canvas = mockAppendChild.mock.calls[0][0] as HTMLCanvasElement
+    const canvas = document.body.querySelector('canvas') as HTMLCanvasElement
     expect(canvas.width).toBe(100)
     expect(canvas.height).toBe(60)
   })
 
-  it('Canvas 应设置 cursor: pointer 样式', () => {
+  it('Canvas 应设置右下角固定定位样式', () => {
     apply({} as ClientContext)
 
-    const canvas = mockAppendChild.mock.calls[0][0] as HTMLCanvasElement
+    const canvas = document.body.querySelector('canvas') as HTMLCanvasElement
     expect(canvas.style.cursor).toBe('pointer')
+    expect(canvas.style.position).toBe('fixed')
+    expect(canvas.style.right).toBe('16px')
+    expect(canvas.style.bottom).toBe('16px')
   })
 
-  it('Canvas 应绑定 click 事件监听器', () => {
+  it('Canvas 应设置 data-session-tag-canvas 属性', () => {
     apply({} as ClientContext)
 
-    const canvas = mockAppendChild.mock.calls[0][0] as HTMLCanvasElement
-    const clickEvent = new MouseEvent('click', {
-      offsetX: 50,
-      offsetY: 30,
-    })
-    canvas.dispatchEvent(clickEvent)
-
-    expect(consoleSpy).toHaveBeenCalledOnce()
-    const logCall = consoleSpy.mock.calls[0]
-    expect(logCall[0]).toContain('[SessionTag]')
+    const canvas = document.body.querySelector('canvas') as HTMLCanvasElement
+    expect(canvas.getAttribute('data-session-tag-canvas')).toBe('true')
   })
 
-  it('点击事件日志应包含 type、time、x、y 属性', () => {
+  it('Canvas 始终追加到 document.body', () => {
     apply({} as ClientContext)
 
-    const canvas = mockAppendChild.mock.calls[0][0] as HTMLCanvasElement
-    // 创建点击事件并手动设置 offsetX 和 offsetY（jsdom 不支持）
-    const clickEvent = new MouseEvent('click', {
-      clientX: 100,
-      clientY: 100,
-    })
-    // jsdom 不支持 offsetX/offsetY，需要通过 Object.defineProperty 设置
-    Object.defineProperty(clickEvent, 'offsetX', { value: 25, writable: false })
-    Object.defineProperty(clickEvent, 'offsetY', { value: 15, writable: false })
-    canvas.dispatchEvent(clickEvent)
+    const canvas = document.body.querySelector('canvas')
+    expect(canvas).not.toBeNull()
+    expect(canvas!.tagName).toBe('CANVAS')
+  })
 
-    const logCall = consoleSpy.mock.calls[0]
-    const logData = logCall[1]
-    expect(logData).toHaveProperty('type', 'click')
-    expect(logData).toHaveProperty('time')
-    expect(logData).toHaveProperty('x', 25)
-    expect(logData).toHaveProperty('y', 15)
+  it('apply 应打印 ctx 上下文日志', () => {
+    const ctx = { slots: { register: vi.fn() } } as unknown as ClientContext
+    apply(ctx)
+
+    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
+    const hasContextLog = allWarns.some(log => String(log).includes('ctx 上下文'))
+    expect(hasContextLog).toBe(true)
+  })
+
+  it('apply 应打印 slots 可用性', () => {
+    apply({ slots: {} } as ClientContext)
+
+    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
+    const hasSlotsLog = allWarns.some(log => String(log).includes('ctx.slots 可用'))
+    expect(hasSlotsLog).toBe(true)
+  })
+
+  it('apply 应打印挂载日志', () => {
+    apply({} as ClientContext)
+
+    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
+    const hasMountLog = allWarns.some(log => String(log).includes('右下角固定定位'))
+    expect(hasMountLog).toBe(true)
+  })
+
+  it('apply 应启动 MutationObserver', () => {
+    apply({} as ClientContext)
+
+    const allWarns = warnSpy.mock.calls.map(c => c.join(' '))
+    const hasObserverLog = allWarns.some(log => String(log).includes('MutationObserver 已启动'))
+    expect(hasObserverLog).toBe(true)
+  })
+
+  it('apply 应提供 cleanup 函数', () => {
+    apply({} as ClientContext)
+    expect(typeof (window as any).__sessionTagCleanup).toBe('function')
+  })
+
+  it('apply 应打印 DOM 节点扫描报告', () => {
+    apply({} as ClientContext)
+
+    expect(consoleGroupSpy).toHaveBeenCalled()
+    const groupCalls = consoleGroupSpy.mock.calls.map(c => c[0])
+    const hasReport = groupCalls.some(log => String(log).includes('DOM 节点扫描报告'))
+    expect(hasReport).toBe(true)
   })
 })

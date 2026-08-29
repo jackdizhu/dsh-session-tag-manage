@@ -34,36 +34,39 @@ describe('dsh-session-base-host 插件', () => {
     expect(mod.inject).toContain('webServer')
   })
 
-  it('apply 函数应注册 /dsh-session-host-test 路由', () => {
+  it('apply 函数应以路由对象注册 /dsh-session-host-test', () => {
     apply(mockCtx)
     expect(mockRegister).toHaveBeenCalledOnce()
-    expect(mockRegister).toHaveBeenCalledWith(
-      '/dsh-session-host-test',
-      expect.any(Function)
-    )
+    const route = mockRegister.mock.calls[0][0]
+    expect(route).toMatchObject({
+      kind: 'exact',
+      path: '/dsh-session-host-test',
+    })
+    expect(typeof route.handler).toBe('function')
   })
 
   it('路由处理器应返回包含 serverTime 的 JSON', () => {
     apply(mockCtx)
-    const handler = mockRegister.mock.calls[0][1]
+    const route = mockRegister.mock.calls[0][0]
 
     const mockReq = {} as any
     const mockRes = {
-      json: vi.fn(),
+      writeHead: vi.fn(),
+      end: vi.fn(),
     } as any
 
-    handler(mockReq, mockRes)
+    route.handler(mockReq, mockRes)
 
-    expect(mockRes.json).toHaveBeenCalledOnce()
-    const response = mockRes.json.mock.calls[0][0]
-    expect(response).toHaveProperty('serverTime')
-    expect(typeof response.serverTime).toBe('number')
-    expect(response.serverTime).toBeGreaterThan(0)
+    expect(mockRes.writeHead).toHaveBeenCalledWith(200, expect.anything())
+    const body = JSON.parse(mockRes.end.mock.calls[0][0])
+    expect(body).toHaveProperty('serverTime')
+    expect(typeof body.serverTime).toBe('number')
+    expect(body.serverTime).toBeGreaterThan(0)
   })
 
   it('路由路径应以 /dsh-session-host- 开头', () => {
     apply(mockCtx)
-    const routePath = mockRegister.mock.calls[0][0]
-    expect(routePath).toMatch(/^\/dsh-session-host-/)
+    const route = mockRegister.mock.calls[0][0]
+    expect(route.path).toMatch(/^\/dsh-session-host-/)
   })
 })

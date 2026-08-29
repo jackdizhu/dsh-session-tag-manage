@@ -7,7 +7,13 @@
 declare module '@deepseek-ai/cordis' {
   export interface Context {
     webServer: {
-      register(path: string, handler: (req: any, res: any) => void): void
+      // 与 @deepseek-ai/dsh-host-webserver 运行时一致：register 接收路由对象
+      // { kind, path, handler }，handler 收到 node:http 的 IncomingMessage / ServerResponse。
+      register(route: {
+        kind: 'exact' | 'prefix'
+        path: string
+        handler: (req: any, res: any) => void
+      }): void
     }
   }
 }

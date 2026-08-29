@@ -9,13 +9,21 @@ export default defineConfig([
     target: 'es2024',
     external: ['@deepseek-ai/*'],
   },
-  // 客户端产物（CJS）
+  // 客户端插件 Node 半区（ESM）：空插件，让 loader 条目在宿主侧挂载成功
+  {
+    entry: ['packages/dsh-session-client/src/host.ts'],
+    outDir: 'packages/dsh-session-client/dist',
+    format: 'esm',
+    target: 'es2024',
+  },
+  // 客户端插件浏览器半区（CJS 主体）
+  // 注意：DSH 客户端模块系统要求 bundle 以
+  //   window.__ModuleLoader__.load({ id, factory(require) { ... return module.exports } })
+  // 形式自注册；tsdown 不支持 footer，注册包装由 scripts/wrap-client-bundle.mjs 在构建后统一拼接。
   {
     entry: ['packages/dsh-session-client/src/index.ts'],
     outDir: 'packages/dsh-session-client/dist',
     format: 'cjs',
-    banner: {
-      js: `window.__ModuleLoader__ = window.__ModuleLoader__ || { load(opts) { var m = { exports: {} }; opts.factory(function(id){return require(id)}, m); return m.exports; } };`,
-    },
+    target: 'es2024',
   },
 ])

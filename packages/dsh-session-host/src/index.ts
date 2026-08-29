@@ -20,7 +20,15 @@ export const inject = ['webServer']
  * @param ctx - Cordis 上下文
  */
 export function apply(ctx: Context) {
-  ctx.webServer.register('/dsh-session-host-test', (_req, res) => {
-    res.json({ serverTime: Date.now() })
+  // dsh-host-webserver 的 register 接收路由对象 { kind, path, handler }，
+  // handler 收到的是 node:http 的 IncomingMessage / ServerResponse（没有 res.json 方法），
+  // 因此需要自行 writeHead + end 输出 JSON。
+  ctx.webServer.register({
+    kind: 'exact',
+    path: '/dsh-session-host-test',
+    handler: (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ serverTime: Date.now() }))
+    },
   })
 }
