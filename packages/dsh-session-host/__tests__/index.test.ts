@@ -49,7 +49,7 @@ describe('dsh-session-tag-manage-host 插件', () => {
     apply(mockCtx)
     const route = mockRegister.mock.calls[0][0]
 
-    const mockReq = {} as any
+    const mockReq = { url: '/dsh-session-host-test', headers: {} } as any
     const mockRes = {
       writeHead: vi.fn(),
       end: vi.fn(),
@@ -68,5 +68,42 @@ describe('dsh-session-tag-manage-host 插件', () => {
     apply(mockCtx)
     const route = mockRegister.mock.calls[0][0]
     expect(route.path).toMatch(/^\/dsh-session-host-/)
+  })
+
+  it('路由处理器应解析 folderActive 和 sessionCurrent 参数', () => {
+    apply(mockCtx)
+    const route = mockRegister.mock.calls[0][0]
+
+    const mockReq = {
+      url: '/dsh-session-host-test?folderActive=ws-123&sessionCurrent=sess-456',
+      headers: {},
+    } as any
+    const mockRes = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as any
+
+    route.handler(mockReq, mockRes)
+
+    const body = JSON.parse(mockRes.end.mock.calls[0][0])
+    expect(body).toHaveProperty('folderActive', 'ws-123')
+    expect(body).toHaveProperty('sessionCurrent', 'sess-456')
+  })
+
+  it('无参数时应返回默认值', () => {
+    apply(mockCtx)
+    const route = mockRegister.mock.calls[0][0]
+
+    const mockReq = { url: '/dsh-session-host-test', headers: {} } as any
+    const mockRes = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as any
+
+    route.handler(mockReq, mockRes)
+
+    const body = JSON.parse(mockRes.end.mock.calls[0][0])
+    expect(body).toHaveProperty('folderActive', null)
+    expect(body).toHaveProperty('sessionCurrent', null)
   })
 })

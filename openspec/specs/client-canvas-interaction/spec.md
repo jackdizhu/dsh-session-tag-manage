@@ -24,6 +24,17 @@
 - **WHEN** 用户点击 Canvas 蓝色块区域
 - **THEN** 控制台输出日志包含 `type: "click"`、`time: <toLocaleString>`、`x: <offsetX>`、`y: <offsetY>`
 
+### Requirement: 工作区标签查询接口调用
+客户端插件 SHALL 在 Canvas 点击时调用 `POST /dsh-session-tag-manage/workspace.list.tag` 接口，传入当前 `workspaceId`，获取该工作区所有会话的标签数据。
+
+#### Scenario: 正常调用
+- **WHEN** 用户点击 Canvas 蓝色块
+- **THEN** 客户端发送 `POST /dsh-session-tag-manage/workspace.list.tag`，请求体为 `{ "workspaceId": "<当前工作区 ID>" }`，控制台打印接口响应数据
+
+#### Scenario: 无工作区上下文
+- **WHEN** 当前无活跃工作区（`workspaceId` 为空）
+- **THEN** 客户端仍发送请求（`workspaceId` 为空字符串），接口返回空 `items` 数组
+
 ### Requirement: 模块归属
 客户端端代码 SHALL 位于 `packages/dsh-session-client/` 目录，入口文件为 `src/index.ts`。
 

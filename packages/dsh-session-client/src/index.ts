@@ -14,7 +14,7 @@ const TAG = '[SessionTag]'/** 插件名称，符合 Cordis 插件规范 */
 export const name = 'dsh-session-tag-manage-client'
 
 /** 注入依赖列表 */
-export const inject = ['slots']
+export const inject = ['slots', 'sessions', 'workspaces'] as const
 
 /** 安全查询辅助函数：querySelectorAll 可能在某些环境下返回 undefined */
 function safeQueryAll(selector: string): Element[] {
@@ -30,6 +30,43 @@ function safeQueryAll(selector: string): Element[] {
 function safeQuery(selector: string): Element | null {
   try {
     return document.querySelector(selector)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 从 ctx.sessions.selection 获取当前会话 ID
+ */
+function getCurrentSessionId(ctx: ClientContext): string | null {
+  try {
+    if (!ctx.sessions?.selection) return null
+    const snapshot = ctx.sessions.selection.getSnapshot()
+    return snapshot?.sessionId ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 获取当前活跃工作区 ID
+ * 策略：根据当前会话 ID 在工作区列表中查找所属工作区
+ */
+function getActiveWorkspaceId(
+  workspaces: Array<{ workspaceId: string; sessionIds?: string[] }>,
+  sessionId: string | null
+): string | null {
+  if (!sessionId || !workspaces?.length) return null
+
+  try {
+    // 策略1：根据会话 ID 查找所属工作区
+    const workspace = workspaces.find(w => w.sessionIds?.includes(sessionId))
+    if (workspace) return workspace.workspaceId
+
+    // 策略2：如果找不到，返回第一个工作区（降级）
+    // 注意：这不准确，但比返回 null 好
+    console.warn(`${TAG} 会话 ${sessionId} 未找到所属工作区，使用第一个工作区降级`)
+    return workspaces[0]?.workspaceId ?? null
   } catch {
     return null
   }
@@ -97,6 +134,61 @@ export function apply(ctx: ClientContext) {
     console.log(`${TAG} ctx.slots 的属性:`, Object.keys(ctx.slots))
   }
 
+  // 订阅工作区数据（ObservableSnapshot）
+  const unsubscribers: Array<() => void> = []
+  if (ctx.workspaces?.list) {
+    let lastWorkspacesHash = ''
+    const workspacesSnapshot = ctx.workspaces.list.getSnapshot()
+    console.log(`${TAG} 初始工作区列表:`, workspacesSnapshot.items)
+
+    const unsubWorkspaces = ctx.workspaces.list.subscribe(() => {
+      const snap = ctx.workspaces.list.getSnapshot()
+      const currentHash = JSON.stringify(snap.items)
+      if (currentHash !== lastWorkspacesHash) {
+        console.log(`${TAG} [变化] 工作区列表更新:`, snap.items)
+        lastWorkspacesHash = currentHash
+      }
+    })
+    unsubscribers.push(unsubWorkspaces)
+    lastWorkspacesHash = JSON.stringify(workspacesSnapshot.items)
+  }
+
+  // 订阅当前会话选择变化（ObservableSnapshot）
+  if (ctx.sessions?.selection) {
+    let lastSessionId: string | null = null
+    const initialSelection = ctx.sessions.selection.getSnapshot()
+    console.log(`${TAG} 初始当前会话:`, initialSelection?.sessionId)
+    lastSessionId = initialSelection?.sessionId ?? null
+
+    const unsubSelection = ctx.sessions.selection.subscribe(() => {
+      const snap = ctx.sessions.selection.getSnapshot()
+      const currentSessionId = snap?.sessionId ?? null
+      if (currentSessionId !== lastSessionId) {
+        console.log(`${TAG} [变化] 当前会话切换:`, { from: lastSessionId, to: currentSessionId })
+        lastSessionId = currentSessionId
+      }
+    })
+    unsubscribers.push(unsubSelection)
+  }
+
+  // 订阅会话列表数据（ObservableSnapshot）
+  if (ctx.sessions?.list) {
+    let lastSessionsHash = ''
+    const sessionsSnapshot = ctx.sessions.list.getSnapshot()
+    console.log(`${TAG} 初始会话列表:`, sessionsSnapshot.items)
+    lastSessionsHash = JSON.stringify(sessionsSnapshot.items)
+
+    const unsubSessions = ctx.sessions.list.subscribe(() => {
+      const snap = ctx.sessions.list.getSnapshot()
+      const currentHash = JSON.stringify(snap.items)
+      if (currentHash !== lastSessionsHash) {
+        console.log(`${TAG} [变化] 会话列表更新:`, snap.items)
+        lastSessionsHash = currentHash
+      }
+    })
+    unsubscribers.push(unsubSessions)
+  }
+
   // 等待 DOM 就绪后执行
   const initPlugin = () => {
     console.log(`${TAG} initPlugin 开始执行，当前 URL:`, window.location.href)
@@ -121,14 +213,36 @@ export function apply(ctx: ClientContext) {
       console.log(`${TAG} 无法获取 Canvas 2D 上下文`)
     }
 
-    // 绑定点击事件
-    canvas.addEventListener('click', (event) => {
+    // 绑定点击事件：调用服务端接口并打印响应
+    canvas.addEventListener('click', async (event) => {
       console.log(`${TAG} Canvas clicked:`, {
         type: event.type,
         time: new Date().toLocaleString(),
         x: event.offsetX,
         y: event.offsetY,
       })
+
+      // 获取当前上下文
+      const sessionCurrent = getCurrentSessionId(ctx)
+      const workspacesSnapshot = ctx.workspaces?.list?.getSnapshot()
+      const folderActive = workspacesSnapshot
+        ? getActiveWorkspaceId(workspacesSnapshot.items, sessionCurrent)
+        : null
+
+      // 构建查询参数
+      const params = new URLSearchParams()
+      if (folderActive) params.set('folderActive', folderActive)
+      if (sessionCurrent) params.set('sessionCurrent', sessionCurrent)
+      const queryString = params.toString()
+      const url = `/dsh-session-host-test${queryString ? `?${queryString}` : ''}`
+
+      try {
+        const res = await fetch(url)
+        const data = await res.json()
+        console.log(`${TAG} 接口响应 /dsh-session-host-test:`, data)
+      } catch (err) {
+        console.error(`${TAG} 接口调用失败 /dsh-session-host-test:`, err)
+      }
     })
 
     // 挂载 Canvas 到 body（fixed 定位，无需依赖特定容器）
@@ -174,6 +288,7 @@ export function apply(ctx: ClientContext) {
 
     // 清理函数（可通过 window.__sessionTagCleanup 调用）
     ;(window as any).__sessionTagCleanup = () => {
+      unsubscribers.forEach(unsub => unsub())
       observer.disconnect()
       clearInterval(intervalId)
       canvas.remove()

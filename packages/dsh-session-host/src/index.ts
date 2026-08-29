@@ -26,9 +26,18 @@ export function apply(ctx: Context) {
   ctx.webServer.register({
     kind: 'exact',
     path: '/dsh-session-host-test',
-    handler: (_req, res) => {
+    handler: (req, res) => {
+      // 解析 URL 查询参数
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+      const folderActive = url.searchParams.get('folderActive')
+      const sessionCurrent = url.searchParams.get('sessionCurrent')
+
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
-      res.end(JSON.stringify({ serverTime: Date.now() }))
+      res.end(JSON.stringify({
+        serverTime: Date.now(),
+        folderActive,
+        sessionCurrent,
+      }))
     },
   })
 }

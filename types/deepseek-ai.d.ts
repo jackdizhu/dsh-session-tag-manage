@@ -25,5 +25,21 @@ declare module '@deepseek-ai/dsh-host-webserver' {
 declare module '@deepseek-ai/dsh-client-runtime/client' {
   export interface ClientContext {
     slots: any
+    sessions: {
+      list: {
+        getSnapshot(): { items: Array<{ sessionId: string; running: boolean; title?: string }> }
+        subscribe(callback: () => void): () => void
+      }
+      selection: {
+        getSnapshot(): { sessionId: string | null }
+        subscribe(callback: () => void): () => void
+      }
+    }
+    workspaces: {
+      list: {
+        getSnapshot(): { items: Array<{ workspaceId: string; title: string; path: string; sessionIds?: string[] }> }
+        subscribe(callback: () => void): () => void
+      }
+    }
   }
 }

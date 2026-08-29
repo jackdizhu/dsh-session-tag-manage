@@ -135,4 +135,40 @@ describe('dsh-session-tag-manage-client 插件', () => {
     const hasReport = groupCalls.some(log => String(log).includes('DOM 节点扫描报告'))
     expect(hasReport).toBe(true)
   })
+
+  it('apply 应订阅工作区数据', () => {
+    const mockSubscribe = vi.fn().mockReturnValue(() => {})
+    const mockGetSnapshot = vi.fn().mockReturnValue({ items: [] })
+    const ctx = {
+      slots: {},
+      workspaces: {
+        list: {
+          getSnapshot: mockGetSnapshot,
+          subscribe: mockSubscribe,
+        },
+      },
+    } as unknown as ClientContext
+    apply(ctx)
+
+    expect(mockGetSnapshot).toHaveBeenCalled()
+    expect(mockSubscribe).toHaveBeenCalled()
+  })
+
+  it('apply 应订阅会话数据', () => {
+    const mockSubscribe = vi.fn().mockReturnValue(() => {})
+    const mockGetSnapshot = vi.fn().mockReturnValue({ items: [] })
+    const ctx = {
+      slots: {},
+      sessions: {
+        list: {
+          getSnapshot: mockGetSnapshot,
+          subscribe: mockSubscribe,
+        },
+      },
+    } as unknown as ClientContext
+    apply(ctx)
+
+    expect(mockGetSnapshot).toHaveBeenCalled()
+    expect(mockSubscribe).toHaveBeenCalled()
+  })
 })
