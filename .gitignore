@@ -125,7 +125,9 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 .trae/
+.traework/
 .codebuddy/
+.workbuddy/
 .vscode/
 .codex/
 .freebuff/
