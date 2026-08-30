@@ -9,3 +9,5 @@
       name: dsh-session-base-host
     - id: dsh-session-base-client
       name: dsh-session-base-client
+    - id: dsh-skills-auto-enable
+      name: dsh-skills-auto-enable

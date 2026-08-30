@@ -1,0 +1,4 @@
+# 分发用补丁：按包名注册宿主插件
+- insert:
+    - id: dsh-skills-auto-enable
+      name: dsh-skills-auto-enable

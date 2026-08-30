@@ -9,6 +9,14 @@ export default defineConfig([
     target: 'es2024',
     external: ['@deepseek-ai/*'],
   },
+  // 宿主端产物（ESM）：技能自动启停插件
+  {
+    entry: ['packages/dsh-skills-auto-enable/src/index.ts'],
+    outDir: 'packages/dsh-skills-auto-enable/dist',
+    format: 'esm',
+    target: 'es2024',
+    external: ['@deepseek-ai/*'],
+  },
   // 客户端插件 Node 半区（ESM）：空插件，让 loader 条目在宿主侧挂载成功
   {
     entry: ['packages/dsh-session-client/src/host.ts'],

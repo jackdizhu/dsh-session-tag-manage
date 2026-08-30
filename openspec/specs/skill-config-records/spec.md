@@ -8,7 +8,7 @@
 
 #### Scenario: 会话发起写入基线清单
 
-- **GIVEN** 会话首次 `agent/pre-step`，全量技能为 `[lark-calendar, lark-doc, code-search]`
+- **GIVEN** 会话发起（`agent/session-start`，`agent/pre-step` 兜底），全量技能为 `[lark-calendar, lark-doc, code-search]`
 - **WHEN** 插件完成可见性计算
 - **THEN** 配置文件 `skills` 含三条记录，每条带 `name`/`keyword`/`overview`（`keyword` 为命中关键字或空串）
 - **AND** `disabledSkills` 命中的技能在 `skillsLog` 中产生 `op:'remove'` 流水

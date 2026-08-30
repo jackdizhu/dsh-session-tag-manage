@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul 2>nul
 REM ========================================
-REM DSH Session Tag Manage - Auto Register (Windows)
+REM DSH Skills Auto Enable - Auto Register (Windows)
 REM ========================================
 REM Usage: scripts\auto-register.cmd
 REM ========================================
-REM 委托给跨平台 Node 主脚本，统一逻辑并保证幂等写入 client patch 条目
+REM 委托给跨平台 Node 主脚本，统一逻辑（仅注册 dsh-skills-auto-enable 插件）
 REM ========================================
 
 setlocal

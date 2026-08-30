@@ -28,6 +28,8 @@ importers:
 
   packages/dsh-session-host: {}
 
+  packages/dsh-skills-auto-enable: {}
+
 packages:
 
   '@asamuzakjp/css-color@6.0.7':

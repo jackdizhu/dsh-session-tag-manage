@@ -4,13 +4,13 @@
 
 ### Requirement: 会话发起时移除禁用技能
 
-宿主插件 `dsh-skills-auto-enable` SHALL 在会话首次 `agent/pre-step` 时，对 `rules.disabledSkills` 中的每一个技能名，在 agent 作用域注册同名的 runtime shadow 技能并设 `invocation.modelInvocable=false`，使框架 `tool-skill` 基于 `ctx.skills.snapshot()` 自建的模型目录中不包含该技能。
+宿主插件 `dsh-skills-auto-enable` SHALL 在会话发起（`agent/session-start`，`agent/pre-step` 兜底）时，对 `rules.disabledSkills` 中的每一个技能名，通过插件自身已注入 `skills` 的 `ctx.skills` 注册同名的 runtime shadow 技能（落到**全局层**，rank 250 < bundled 600 胜出）并设 `invocation.modelInvocable=false`，使框架 `tool-skill` 基于 `ctx.skills.snapshot()` 自建的模型目录中不包含该技能。
 
 #### Scenario: 禁用技能从目录消失
 
 - **GIVEN** 配置文件 `rules.disabledSkills` 含 `["lark-calendar"]`
 - **WHEN** 该会话进入首次 `agent/pre-step`
-- **THEN** 插件在 agent 作用域注册名为 `lark-calendar`、`modelInvocable=false` 的 shadow 技能
+- **THEN** 插件在全局层注册名为 `lark-calendar`、`modelInvocable=false` 的 shadow 技能
 - **AND** 本轮及后续轮次模型看到的 `<available_skills>` 中不包含 `lark-calendar`
 
 #### Scenario: shadow 不影响用户直接调用
@@ -47,7 +47,7 @@
 
 ### Requirement: 模块归属
 
-技能可见性控制代码 SHALL 位于 `packages/dsh-skills-auto-enable/`（宿主端插件 `dsh-skills-auto-enable`），通过 Cordis 扩展点 `agent/pre-step` 与 `ctx.skills` 服务实现，不修改任何 `@deepseek-ai/*` 代码。
+技能可见性控制代码 SHALL 位于 `packages/dsh-skills-auto-enable/`（宿主端插件 `dsh-skills-auto-enable`），通过 Cordis 扩展点 `agent/session-start` / `agent/pre-step` / `agent/disposed` 与插件 `ctx.skills` 服务实现，不修改任何 `@deepseek-ai/*` 代码。
 
 #### Scenario: 目录结构合规
 

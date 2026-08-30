@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ========================================
-# DSH Session Tag Manage - 自动注册脚本 (Linux/macOS)
+# DSH Skills Auto Enable - 自动注册脚本 (Linux/macOS)
 # ========================================
-# 用途：自动安装宿主端和客户端插件到 DSH profile
+# 用途：构建并注册 dsh-skills-auto-enable 插件到 DSH profile
 # 使用：在项目根目录执行 ./scripts/auto-register.sh
 # ========================================
-# 委托给跨平台 Node 主脚本，统一逻辑并保证幂等写入 client patch 条目
+# 委托给跨平台 Node 主脚本，统一逻辑（仅注册 dsh-skills-auto-enable 插件）
 # ========================================
 
 set -e
