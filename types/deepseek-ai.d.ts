@@ -1,25 +1,24 @@
 /**
  * @deepseek-ai 包模拟类型定义
  *
- * 用于本地开发和测试，实际运行时由 DSH 宿主框架提供
+ * 用于本地开发和测试，实际运行时由 DSH 宿主框架提供。
+ * 宿主端包（cordis、dsh-storage-domain）已作为 devDependency 安装，
+ * 类型由各包自带。此处仅声明：
+ * - webServer：运行时由 dsh-host-webserver 提供，但类型未声明
+ * - dsh-client-runtime 客户端类型
  */
 
+/** 宿主 HTTP 路由服务（运行时由 dsh-host-webserver 提供） */
 declare module '@deepseek-ai/cordis' {
-  export interface Context {
+  interface Context {
     webServer: {
-      // 与 @deepseek-ai/dsh-host-webserver 运行时一致：register 接收路由对象
-      // { kind, path, handler }，handler 收到 node:http 的 IncomingMessage / ServerResponse。
       register(route: {
         kind: 'exact' | 'prefix'
         path: string
-        handler: (req: any, res: any) => void
+        handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
       }): void
     }
   }
-}
-
-declare module '@deepseek-ai/dsh-host-webserver' {
-  // 空模块声明
 }
 
 declare module '@deepseek-ai/dsh-client-runtime/client' {

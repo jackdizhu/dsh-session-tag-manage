@@ -213,6 +213,9 @@ export function apply(ctx: ClientContext) {
       console.log(`${TAG} 无法获取 Canvas 2D 上下文`)
     }
 
+    // 工作区会话标签查询路由（与 host contract.ts 保持一致）
+    const TAG_LIST_ROUTE = '/dsh-session-tag-manage/workspace.list.tag'
+
     // 绑定点击事件：调用服务端接口并打印响应
     canvas.addEventListener('click', async (event) => {
       console.log(`${TAG} Canvas clicked:`, {
@@ -229,19 +232,17 @@ export function apply(ctx: ClientContext) {
         ? getActiveWorkspaceId(workspacesSnapshot.items, sessionCurrent)
         : null
 
-      // 构建查询参数
-      const params = new URLSearchParams()
-      if (folderActive) params.set('folderActive', folderActive)
-      if (sessionCurrent) params.set('sessionCurrent', sessionCurrent)
-      const queryString = params.toString()
-      const url = `/dsh-session-host-test${queryString ? `?${queryString}` : ''}`
-
+      // 调用工作区会话标签查询接口
       try {
-        const res = await fetch(url)
+        const res = await fetch(TAG_LIST_ROUTE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspaceId: folderActive ?? '' }),
+        })
         const data = await res.json()
-        console.log(`${TAG} 接口响应 /dsh-session-host-test:`, data)
+        console.log(`${TAG} 接口响应 ${TAG_LIST_ROUTE}:`, data)
       } catch (err) {
-        console.error(`${TAG} 接口调用失败 /dsh-session-host-test:`, err)
+        console.error(`${TAG} 接口调用失败 ${TAG_LIST_ROUTE}:`, err)
       }
     })
 

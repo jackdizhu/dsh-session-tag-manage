@@ -130,6 +130,7 @@ dist
 .codex/
 .freebuff/
 .scratch/
+git-source/
 
 # pnpm
 .pnpm-store

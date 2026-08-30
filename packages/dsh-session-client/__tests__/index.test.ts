@@ -171,4 +171,27 @@ describe('dsh-session-tag-manage-client 插件', () => {
     expect(mockGetSnapshot).toHaveBeenCalled()
     expect(mockSubscribe).toHaveBeenCalled()
   })
+
+  it('Canvas 点击应调用 workspace.list.tag 接口', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ ok: true, value: { items: [] } }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    apply({} as ClientContext)
+    const canvas = document.body.querySelector('canvas') as HTMLCanvasElement
+    canvas.click()
+
+    await vi.waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/dsh-session-tag-manage/workspace.list.tag',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+
+    vi.unstubAllGlobals()
+  })
 })

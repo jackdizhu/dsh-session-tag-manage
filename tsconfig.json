@@ -11,10 +11,7 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "@deepseek-ai/*": ["./types/deepseek-ai.d.ts"]
-    }
+    "baseUrl": "."
   },
   "include": ["packages/*/src/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
