@@ -46,4 +46,28 @@ describe('records', () => {
     expect(back.skills).toHaveLength(1)
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it('flush 全部路径失败时返回 false 且不抛出（Windows EPERM 回归）', () => {
+    // 目标为目录 → write(tmp) 成功但 rename/copy/write 全部失败（跨类型冲突）
+    const dir = mkdtempSync(join(tmpdir(), 'skill-rec-'))
+    const c = defaultConfig()
+    let ok: boolean | undefined
+    // 关键：不得抛异常，否则会击穿 dsh 启动（曾出现 fatal load failure）
+    expect(() => {
+      ok = flush(dir, c)
+    }).not.toThrow()
+    expect(ok).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('skillsLog 超过上限时裁剪最早条目', () => {
+    const c = defaultConfig()
+    for (let i = 0; i < 520; i++) {
+      upsertSkill(c, { name: `s${i}`, keyword: '', overview: 'o' }, 'add')
+    }
+    // 清单本身不受影响，仅审计流水被裁剪
+    expect(c.skills).toHaveLength(520)
+    expect(c.skillsLog.length).toBeLessThanOrEqual(500)
+    expect(c.skillsLog.at(-1)!.name).toBe('s519')
+  })
 })

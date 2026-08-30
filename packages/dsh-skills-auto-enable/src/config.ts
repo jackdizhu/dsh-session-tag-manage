@@ -51,6 +51,16 @@ export interface UsageRecord {
   lastUsedAt: string
 }
 
+/** 调试模式配置：默认开启，在真实 LLM 接口调用前拦截，将请求参数写入 storageDomain（落盘临时文件） */
+export interface DebugConfig {
+  /** 是否启用调试拦截；默认 true */
+  enabled: boolean
+  /** storageDomain 领域名（经 json 后端持久化到 ~/.dsh/storages/<domain>.json） */
+  domain: string
+  /** 拦截后返回给会话的合成助手消息（用于让会话正常结束，不真正调用模型） */
+  reply: string
+}
+
 /** 完整配置结构 */
 export interface AutoEnableConfig {
   version: 1
@@ -62,6 +72,7 @@ export interface AutoEnableConfig {
   skills: SkillRecord[]
   skillsLog: SkillLogEntry[]
   usage: Record<string, UsageRecord>
+  debug: DebugConfig
 }
 
 /** 默认配置（首次运行 / 文件损坏时回退） */
@@ -76,6 +87,11 @@ export function defaultConfig(): AutoEnableConfig {
     skills: [],
     skillsLog: [],
     usage: {},
+    debug: {
+      enabled: true,
+      domain: 'dsh-llm-debug',
+      reply: '[DEBUG] LLM call blocked; request params recorded to a temp file.',
+    },
   }
 }
 
@@ -118,6 +134,7 @@ export class ConfigStore {
         skills: parsed.skills ?? [],
         skillsLog: parsed.skillsLog ?? [],
         usage: parsed.usage ?? {},
+        debug: { ...defaultConfig().debug, ...parsed.debug },
       }
     } catch {
       // 损坏回退默认并告警，不阻断会话
@@ -125,16 +142,24 @@ export class ConfigStore {
     }
   }
 
-  /** 监听配置文件所在目录，文件名匹配时热重载 */
+  /**
+   * 监听配置文件所在目录，文件名匹配时热重载。
+   *
+   * 观察者必须 `unref()`：否则 FSWatcher 会一直持有事件循环引用，导致 headless/CLI
+   * 场景会话结束后进程无法退出（实测挂住直到被 timeout 杀掉）；而挂住的进程又会持续
+   * 占用配置文件所在目录的句柄，使下一次 `flush` 的 rename 覆写报 Windows EPERM。
+   * unref 后仍会在进程存活期间正常触发热重载（web 长驻进程不受影响）。
+   */
   watch(onChange: () => void): void {
     const dir = dirname(this.file)
     const name = basename(this.file)
-    watch(dir, (_event, filename) => {
+    const watcher = watch(dir, (_event, filename) => {
       if (filename === name) {
         this.reload()
         onChange()
       }
     })
+    watcher.unref()
   }
 
   /** 同步原子写盘（委托 records.flush：先写临时文件再 rename），避免半写文件 */

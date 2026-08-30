@@ -17,6 +17,22 @@ describe('visibility', () => {
     expect(computeEffectiveDisabled(['lark-calendar'], r, new Set())).toEqual(['lark-calendar'])
   })
 
+  it('关键字规则前缀族默认隐藏（knownSkillNames 命中前缀）', () => {
+    const r = [{ keywords: ['飞书', 'feishu', 'lark'], skillPrefix: 'lark-' }]
+    // disabledSkills 为空，但传入已注册技能名 → 所有 lark-* 默认进入禁用集
+    expect(
+      computeEffectiveDisabled([], r, new Set(), ['lark-approval', 'lark-apps', 'lark-calendar', 'other-skill']),
+    ).toEqual(['lark-approval', 'lark-apps', 'lark-calendar'])
+  })
+
+  it('关键字规则前缀族命中关键字后豁免', () => {
+    const r = [{ keywords: ['飞书', 'feishu', 'lark'], skillPrefix: 'lark-' }]
+    // 用户消息含 "lark" → 前缀命中 → 整族从禁用集移除
+    expect(
+      computeEffectiveDisabled([], r, new Set(['lark-']), ['lark-approval', 'lark-apps']),
+    ).toEqual([])
+  })
+
   it('matchKeywordRules 应命中 feishu（大小写不敏感）', () => {
     const res = matchKeywordRules('请使用 Feishu 处理', [{ keywords: ['feishu'], skillPrefix: 'lark-' }])
     expect(res.prefixes).toEqual(new Set(['lark-']))

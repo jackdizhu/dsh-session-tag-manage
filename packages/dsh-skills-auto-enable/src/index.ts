@@ -30,8 +30,13 @@ import {
   keywordFor,
 } from './visibility.js'
 import { upsertSkill, recordUsage, flush } from './records.js'
+import { installDebugMode } from './debug.js'
 
 export const name = 'dsh-skills-auto-enable'
+// 仅注入宿主根插件可直达的服务：agents / skills。
+// llm/stream 与 storage 不可在宿主根插件 inject（同 agent.ctx.skills 限制，二者均在嵌套
+// ctx 上提供）；但 llm/stream 事件会冒泡到宿主根，故以 ctx.on 监听拦截；storage 则通过
+// 受 try/catch 保护的 ctx.storage 访问走 KV 单元，不可达时回退 os.tmpdir 临时文件。
 export const inject = ['agents', 'skills']
 
 /** 单会话运行状态 */
@@ -109,6 +114,9 @@ export function apply(ctx: Context): void {
 
   const sessions = new Map<string, SessionState>()
 
+  // 调试模式：拦截真实 LLM 调用，将请求参数写入 storageDomain（默认开启）
+  installDebugMode(ctx, store)
+
   const lookupFor = (agent: Agent): SkillViewOptions => ({
     cwd: agent.session.header.cwd,
     scope: agent,
@@ -119,9 +127,18 @@ export function apply(ctx: Context): void {
     const sid = agent.session.id
     if (sessions.has(sid)) return
     const cfg = store.get()
+    // 先列出当前会话已注册的全部技能（用于把"关键字规则前缀族"默认纳入禁用集）
+    const all = await ctx.skills.list(lookupFor(agent))
     const text = userTextFromEvents(agent.session.events)
     const { prefixes, keywords } = matchKeywordRules(text, cfg.rules.keywordRules)
-    const effective = computeEffectiveDisabled(cfg.rules.disabledSkills, cfg.rules.keywordRules, prefixes)
+    // 有效禁用集 = disabledSkills ∪（命中规则前缀的全部已注册技能），再去掉关键字命中的前缀。
+    // 由此 lark-* 等前缀族默认隐藏，仅当用户消息含 飞书/feishu/lark 时才经 reconcile 加回。
+    const effective = computeEffectiveDisabled(
+      cfg.rules.disabledSkills,
+      cfg.rules.keywordRules,
+      prefixes,
+      all.map((s) => s.name),
+    )
 
     // 用插件自身 ctx（已 inject skills，与框架同一 registry 实例）读取/注册。
     // 注：register 落到全局层（scopeOf(pluginCtx)=undefined，rank 250 < 600 胜出），
@@ -130,7 +147,6 @@ export function apply(ctx: Context): void {
     const disposers = await applyShadows(ctx, effective, lookupFor(agent))
 
     // 基线 skills：非禁用 → add；禁用 → remove 流水（反映"已从上下文移除"）
-    const all = await ctx.skills.list(lookupFor(agent))
     for (const s of all) {
       const disabled = effective.includes(s.name)
       const kw = disabled
@@ -171,9 +187,14 @@ export function apply(ctx: Context): void {
     let changed = false
     // 运行时新命中关键字前缀 → 重新计算有效禁用集、撤销对应 shadow，并将前缀技能增量加回 skills
     if (newPrefixes.length > 0) {
-      const effective = computeEffectiveDisabled(cfg.rules.disabledSkills, cfg.rules.keywordRules, state.matchedPrefixes)
-      await reconcileShadows(ctx, state.disposers, effective, lookupFor(agent))
       const all = await ctx.skills.list(lookupFor(agent))
+      const effective = computeEffectiveDisabled(
+        cfg.rules.disabledSkills,
+        cfg.rules.keywordRules,
+        state.matchedPrefixes,
+        all.map((s) => s.name),
+      )
+      await reconcileShadows(ctx, state.disposers, effective, lookupFor(agent))
       for (const s of all) {
         const rule = cfg.rules.keywordRules.find((r) => s.name.startsWith(r.skillPrefix))
         if (rule && state.matchedPrefixes.has(rule.skillPrefix)) {

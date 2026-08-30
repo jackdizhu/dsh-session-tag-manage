@@ -76,6 +76,72 @@ declare module '@deepseek-ai/dsh-agent' {
   export type PreStepDecision = { kind: string; [key: string]: unknown }
 }
 
+// ===== LLM 服务（@deepseek-ai/dsh-llm 子集） =====
+// 真实运行时由 DSH 宿主框架提供；本地仅声明本插件拦截所需的 API 子集。
+declare module '@deepseek-ai/dsh-llm' {
+  /** 一次完整模型请求（拦截点 llm/stream 的入参 options） */
+  export interface GenerateOptions {
+    provider: string
+    model: string
+    reasoningEffort?: string
+    messages: unknown[]
+    system?: string
+    tools?: unknown[]
+    temperature?: number
+    maxTokens?: number
+    stop?: string[]
+    signal?: unknown
+    sessionId?: unknown
+    purpose?: 'compaction' | 'session-title' | string
+  }
+
+  /** 流式分块（合成响应用到的子集） */
+  export type StreamChunk =
+    | { type: 'block-start'; index: number; blockType: string }
+    | { type: 'text-delta'; index: number; text: string }
+    | { type: 'reasoning-delta'; index: number; text: string }
+    | { type: 'block-end'; index: number; block: unknown }
+    | { type: 'usage'; usage: unknown }
+    | { type: 'finish'; reason: unknown }
+
+  /** 内容块（block-end 的 block 字段） */
+  export interface ContentBlock {
+    type: string
+    text?: string
+    [key: string]: unknown
+  }
+}
+
+// ===== 领域存储（@deepseek-ai/dsh-storage-domain 子集） =====
+// 真实运行时由 DSH 宿主框架提供；本地仅声明本插件写入所需的 API 子集。
+declare module '@deepseek-ai/dsh-storage-domain' {
+  /** 领域声明：name / version / tables（记录 zod schema） */
+  export function defineDomain(spec: any): any
+  /** 声明一张 KV 表（key 类型 / value 类型 / zod 记录 schema） */
+  export function domainTable(key?: any, valueSchema?: any): any
+  /** 已打开领域的句柄（open 返回） */
+  export interface Domain {
+    table(name: string): {
+      put(key: string, value: unknown): void
+      get(key: string): unknown
+      delete(key: string): void
+      size: number
+    }
+    global: unknown
+    close(): void
+  }
+  export type DomainSpec = any
+}
+
+// ===== zod（storage-domain 记录 schema 依赖） =====
+// 仅作类型契约；运行时由 DSH 宿主框架的 node_modules 提供真实 zod。
+declare module 'zod' {
+  export const z: any
+  export type ZodType = any
+  export type ZodTypeAny = any
+  export type infer<T> = any
+}
+
 // ===== Cordis 上下文（@deepseek-ai/cordis 子集，扩展宿主插件所需服务） =====
 declare module '@deepseek-ai/cordis' {
   export interface Context {
@@ -93,6 +159,24 @@ declare module '@deepseek-ai/cordis' {
     once(event: string, listener: (...args: any[]) => any): void
     // 全局技能注册表服务（本插件主要从 agent.skills 的 agent 作用域层操作）
     skills: import('@deepseek-ai/dsh-skill').SkillRegistry
+    // LLM 运行时服务（拦截真实 LLM 调用所需的瀑布事件 llm/stream 绑定于此）
+    llm: unknown
+    // 存储枢纽（宿主根插件可直接 inject；storageDomain 形式在嵌套 ctx 上 provide，
+    // 宿主根插件无法 inject，故调试落盘直接走 storage.backend 的 json KV 单元）
+    storage: {
+      backend: {
+        get(name: string): {
+          kv: {
+            open(descriptor: any): Promise<{
+              putRecord(table: string, key: string, value: unknown): Promise<void>
+              deleteRecord(table: string, key: string): Promise<void>
+              loadAll(): Promise<{ tables: Record<string, Record<string, unknown>>; global: unknown }>
+              close(): Promise<void>
+            }>
+          }
+        }
+      }
+    }
     // 效应作用域：回调内注册的资源随 ctx 销毁自动撤销
     effect(callback: () => void): void
   }

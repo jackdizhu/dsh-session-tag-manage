@@ -17,17 +17,31 @@ import type { KeywordRule } from './config.js'
 import type { SkillViewOptions } from '@deepseek-ai/dsh-skill'
 
 /**
- * 计算有效禁用集：disabledSkills 去掉被命中关键字前缀豁免的技能。
+ * 计算有效禁用集：disabledSkills ∪（所有命中关键字规则前缀的技能）去掉被命中关键字前缀豁免的技能。
  *
- * @example computeEffectiveDisabled(['lark-calendar'], rules, new Set(['lark-'])) // => []
+ * 关键字规则的前缀族（如 skillPrefix:"lark-"）默认隐藏——只有用户消息命中对应关键字
+ * （飞书/feishu/lark）后，经 reconcile 把该前缀技能从有效禁用集移除，才重新进入模型目录。
+ * 这正是"省 token"的核心：lark-* 等前缀技能族默认不占模型上下文，命中意图时才加载。
+ *
+ * @param knownSkillNames 当前已注册的技能名（用于把规则前缀族默认纳入禁用集）；不传则仅用 disabledSkills。
+ *
+ * @example computeEffectiveDisabled([], rules, new Set(), ['lark-approval','lark-apps'])
+ *   // => ['lark-approval','lark-apps']（默认隐藏前缀族）
+ * @example computeEffectiveDisabled([], rules, new Set(['lark-']), ['lark-approval','lark-apps'])
+ *   // => []（关键字命中，前缀族豁免）
  */
 export function computeEffectiveDisabled(
   disabled: string[],
   rules: KeywordRule[],
   matchedPrefixes: Set<string>,
+  knownSkillNames?: string[],
 ): string[] {
-  void rules
-  return disabled.filter((name) => ![...matchedPrefixes].some((p) => name.startsWith(p)))
+  // 关键字规则前缀族默认隐藏（命中关键字后再豁免），实现"省 token"。
+  const ruled = (knownSkillNames ?? []).filter((name) =>
+    rules.some((r) => name.startsWith(r.skillPrefix)),
+  )
+  const base = Array.from(new Set([...disabled, ...ruled]))
+  return base.filter((name) => ![...matchedPrefixes].some((p) => name.startsWith(p)))
 }
 
 /**
