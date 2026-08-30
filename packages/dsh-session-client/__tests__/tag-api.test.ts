@@ -184,6 +184,8 @@ describe('tag-api', () => {
                 assistantMessages: 1,
                 toolCalls: [],
                 userMessageTexts: ['你好'],
+                assistantMessageTexts: ['已为你创建文件'],
+                assistantThinkTexts: ['用户在打招呼', '调用工具 write_file（{"file_path":"a.ts"}）'],
                 fileOperations: [],
                 startedAt: 1000,
                 updatedAt: 2000,
@@ -211,6 +213,10 @@ describe('tag-api', () => {
       if (result.ok) {
         expect(result.value.items[0].sessionId).toBe('session-abc')
         expect(result.value.items[0].turns).toBe(1)
+        expect(result.value.items[0].assistantThinkTexts).toEqual([
+          '用户在打招呼',
+          '调用工具 write_file（{"file_path":"a.ts"}）',
+        ])
       }
     })
 

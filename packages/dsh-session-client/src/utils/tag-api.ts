@@ -111,6 +111,10 @@ export interface SessionEventTagItem {
   assistantMessages: number
   toolCalls: ToolCallStat[]
   userMessageTexts: string[]
+  /** LLM(助手)返回的可读文本列表（与宿主 SessionEventTagItem 一致） */
+  assistantMessageTexts: string[]
+  /** LLM(助手)思考过程（reasoning 思考文本 + tool/call 工具调用，与宿主一致） */
+  assistantThinkTexts: string[]
   fileOperations: string[]
   startedAt: number | null
   updatedAt: number | null

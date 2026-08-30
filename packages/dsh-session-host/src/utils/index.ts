@@ -42,7 +42,10 @@ export {
   foldStats,
   fetchSessionHistory,
   fetchAllSessionEvents,
+  extractContentText,
   extractUserMessages,
+  extractAssistantMessages,
+  extractAssistantThinking,
   extractFileOperations,
   extractSessionTitle,
   splitTurns,
@@ -50,6 +53,7 @@ export {
 } from './session-history.js'
 export type {
   SessionHistoryEvent,
+  ContentBlock,
   UserMessageData,
   AssistantMessageData,
   ToolCallData,

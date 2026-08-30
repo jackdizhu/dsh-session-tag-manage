@@ -115,6 +115,10 @@ export interface SessionEventTagItem {
   toolCalls: Array<{ name: string; count: number }>
   /** 用户真实提问文本列表 */
   userMessageTexts: string[]
+  /** LLM(助手)返回的可读文本列表（取 assistant/message 中 content.type==='text' 的片段） */
+  assistantMessageTexts: string[]
+  /** LLM(助手)思考过程（reasoning 思考文本 + tool/call 工具调用，按事件顺序；不含最终答案正文） */
+  assistantThinkTexts: string[]
   /** 写文件操作路径列表 */
   fileOperations: string[]
   /** 活动开始时间（epoch ms） */

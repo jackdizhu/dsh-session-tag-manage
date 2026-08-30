@@ -17,6 +17,8 @@ import type { Context } from '@deepseek-ai/cordis'
 const mockFetchAllSessionEvents = vi.fn()
 const mockFoldStats = vi.fn()
 const mockExtractUserMessages = vi.fn()
+const mockExtractAssistantMessages = vi.fn()
+const mockExtractAssistantThinking = vi.fn()
 const mockExtractFileOperations = vi.fn()
 const mockExtractSessionTitle = vi.fn()
 const mockSplitTurns = vi.fn()
@@ -44,6 +46,8 @@ vi.mock('../src/utils/session-history.js', () => ({
   fetchAllSessionEvents: (...args: any[]) => mockFetchAllSessionEvents(...args),
   foldStats: (...args: any[]) => mockFoldStats(...args),
   extractUserMessages: (...args: any[]) => mockExtractUserMessages(...args),
+  extractAssistantMessages: (...args: any[]) => mockExtractAssistantMessages(...args),
+  extractAssistantThinking: (...args: any[]) => mockExtractAssistantThinking(...args),
   extractFileOperations: (...args: any[]) => mockExtractFileOperations(...args),
   extractSessionTitle: (...args: any[]) => mockExtractSessionTitle(...args),
   splitTurns: (...args: any[]) => mockSplitTurns(...args),
@@ -107,6 +111,8 @@ describe('workspace.session.tag 路由', () => {
     mockClassifyRoundEndReason.mockReturnValue('completed')
     mockFoldStats.mockReturnValue(defaultStats)
     mockExtractUserMessages.mockReturnValue(['你好'])
+    mockExtractAssistantMessages.mockReturnValue(['你好，已为你创建文件'])
+    mockExtractAssistantThinking.mockReturnValue(['用户在打招呼', '调用工具 read_files（{}）'])
     mockExtractFileOperations.mockReturnValue([])
     mockExtractSessionTitle.mockReturnValue('你好')
 
@@ -175,6 +181,7 @@ describe('workspace.session.tag 路由', () => {
     // 验证调用了 foldStats 和提取函数
     expect(mockFoldStats).toHaveBeenCalledWith(defaultEvents)
     expect(mockExtractUserMessages).toHaveBeenCalledWith(defaultEvents)
+    expect(mockExtractAssistantThinking).toHaveBeenCalledWith(defaultEvents)
     expect(mockExtractFileOperations).toHaveBeenCalledWith(defaultEvents)
     expect(mockExtractSessionTitle).toHaveBeenCalledWith(defaultEvents)
 
@@ -184,6 +191,7 @@ describe('workspace.session.tag 路由', () => {
     expect(body.ok).toBe(true)
     expect(body.value.hasMore).toBe(false)
     expect(body.value.items).toHaveLength(1)
+    expect(mockExtractAssistantMessages).toHaveBeenCalledWith(defaultEvents)
     expect(body.value.items[0]).toMatchObject({
       sessionId: 'session-abc',
       title: '你好',
@@ -194,6 +202,8 @@ describe('workspace.session.tag 路由', () => {
       assistantMessages: 1,
       toolCalls: [{ name: 'read_files', count: 1 }],
       userMessageTexts: ['你好'],
+      assistantMessageTexts: ['你好，已为你创建文件'],
+      assistantThinkTexts: ['用户在打招呼', '调用工具 read_files（{}）'],
       fileOperations: [],
       startedAt: 1000,
       updatedAt: 1004,

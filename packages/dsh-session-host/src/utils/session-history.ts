@@ -39,7 +39,7 @@ export interface SessionHistoryEvent {
 
 /** user/message 事件的 data 结构 */
 export interface UserMessageData {
-  content: Array<{ type: string; text: string }>
+  content: ContentBlock[]
   source: {
     kind: 'user' | 'plugin' | 'skill-catalog'
     rpcId?: string
@@ -53,11 +53,38 @@ export interface UserMessageData {
   id: string
 }
 
-/** assistant/message 事件的 data 结构 */
+/**
+ * assistant/message 事件的 data 结构
+ *
+ * ⚠️ 真实 DSH 事件中，assistant 可读文本**嵌套在 `message.content` 下**（与 user/message 直接 `data.content` 不同）。
+ * 解析时应优先读取 `message.content`，并回退到 `content` 以兼容旧结构。
+ */
 export interface AssistantMessageData {
-  content: Array<{ type: string; text: string }>
-  role: 'assistant'
-  id: string
+  /** 轮次（部分事件有） */
+  turn?: number
+  /** 步骤（部分事件有） */
+  step?: number
+  /** @deprecated 旧结构兼容：部分版本 assistant 文本直接位于 data.content（优先读取 message.content） */
+  content?: ContentBlock[]
+  /** 消息体，assistant 可读文本位于 message.content */
+  message?: {
+    role: 'assistant'
+    /** 内容块数组；type==='text' 为正文，type==='reasoning' 为思考过程（需排除） */
+    content: ContentBlock[]
+    source?: {
+      kind: string
+      provider?: string
+      model?: string
+    }
+    id: string
+  }
+  /** token 用量（部分事件有） */
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    reasoningTokens?: number
+  }
 }
 
 /** tool/call 事件的 data 结构 */
@@ -363,6 +390,33 @@ export async function fetchAllSessionEvents(
   return { events: allEvents, hasMore }
 }
 
+// ===== 通用内容块抽取 =====
+
+/** LLM 消息内容块（user/assistant 的 content 元素统一形态） */
+export type ContentBlock = { type: string; text: string }
+
+/**
+ * 从内容块数组中按 type 过滤抽取文本。
+ *
+ * - 给定 include 时，仅保留 include 内的 type；
+ * - 否则排除 exclude 内的 type（默认 ['reasoning']）；
+ * - 命中的块的 text 以 '\n' 连接。
+ *
+ * 用于统一 user/assistant 文本抽取，避免重复实现内容块过滤逻辑
+ * （user 直接 data.content，assistant 嵌套 data.message.content）。
+ */
+export function extractContentText(
+  blocks: readonly ContentBlock[] | undefined,
+  opts?: { include?: string[]; exclude?: string[] },
+): string {
+  const include = opts?.include
+  const exclude = opts?.exclude ?? ['reasoning']
+  return (blocks ?? [])
+    .filter((b) => (include ? include.includes(b.type) : !exclude.includes(b.type)))
+    .map((b) => b.text)
+    .join('\n')
+}
+
 // ===== 事件过滤辅助 =====
 
 /** 提取用户真实提问文本（source.kind==='user' 的 user/message） */
@@ -372,13 +426,111 @@ export function extractUserMessages(events: readonly SessionHistoryEvent[]): str
     if (entry.event.type !== EventType.USER_MESSAGE) continue
     const data = entry.event.data as unknown as UserMessageData
     if (data.source?.kind !== 'user') continue
-    const text = data.content
-      ?.filter((c) => c.type === 'text')
-      .map((c) => c.text)
-      .join('\n')
+    const text = extractContentText(data.content, { include: ['text'] })
     if (text) messages.push(text)
   }
   return messages
+}
+
+/**
+ * 计算「最终回答」assistant/message 的 seq。
+ *
+ * 真实 deepseek-harness 会话中，assistant 的「过程独白」与「最终回答」常混在同为 `type==='text'` 的块里，
+ * 仅靠块类型无法区分。可靠的判据是**事件顺序**：最终回答 = segment 内最后一个、其后不再跟随任何 `tool/call`
+ * 的 assistant/message（即整轮收尾、模型停止前的那一条）。
+ *
+ * 若无任何 assistant/message 位于全部 tool/call 之后（例如一轮以工具调用结束），返回 -1，表示本段无最终回答文本。
+ */
+function finalAnswerSeq(events: readonly SessionHistoryEvent[]): number {
+  let lastToolCall = -1
+  for (const entry of events) {
+    if (entry.event.type === EventType.TOOL_CALL) {
+      lastToolCall = Math.max(lastToolCall, entry.event.seq)
+    }
+  }
+  let answerSeq = -1
+  for (const entry of events) {
+    if (entry.event.type === EventType.ASSISTANT_MESSAGE && entry.event.seq > lastToolCall) {
+      answerSeq = Math.max(answerSeq, entry.event.seq)
+    }
+  }
+  return answerSeq
+}
+
+/**
+ * 提取 LLM(助手)的**最终回答**文本（assistant/message 中 content.type==='text' 的片段）。
+ *
+ * ⚠️ 仅取 segment 内「最终回答」那一条 assistant/message 的 text（其后无 tool/call），
+ * 排除过程独白与 type==='reasoning'（思考过程）。过程独白与思考统一归入 `extractAssistantThinking`。
+ *
+ * 真实 DSH 事件中 assistant 文本位于 `data.message.content`（与 user/message 的 `data.content` 不同），
+ * 故优先读取 `message.content`，缺失时回退 `content` 以兼容旧结构。
+ */
+export function extractAssistantMessages(events: readonly SessionHistoryEvent[]): string[] {
+  const answerSeq = finalAnswerSeq(events)
+  if (answerSeq < 0) return []
+  const messages: string[] = []
+  for (const entry of events) {
+    if (entry.event.type !== EventType.ASSISTANT_MESSAGE) continue
+    if (entry.event.seq !== answerSeq) continue
+    const data = entry.event.data as unknown as AssistantMessageData
+    const text = extractContentText(data.message?.content ?? data.content, { include: ['text'] })
+    if (text) messages.push(text)
+  }
+  return messages
+}
+
+/** 将工具输入压缩为可读摘要（用于思考过程展示），超长截断 */
+export function summarizeToolInput(
+  input: Record<string, unknown> | undefined,
+  maxLen = 200,
+): string {
+  if (!input || typeof input !== 'object') return ''
+  let s: string
+  try {
+    s = JSON.stringify(input)
+  } catch {
+    s = String(input)
+  }
+  if (s.length > maxLen) s = s.slice(0, maxLen) + '…'
+  return s
+}
+
+/**
+ * 抽取 LLM(助手)的完整思考过程（按事件顺序）：
+ *
+ * - `assistant/message` 中 `content.type==='reasoning'` 的文本（每消息合并为 1 条片段）；
+ * - `assistant/message` 中**非最终回答**的 `content.type==='text'` 片段（过程独白，如
+ *   "Now let me verify the composition boot-free…"），真实会话里这类文本与最终回答同为 `text` 块、
+ *   且紧跟在 tool/call 之前，应归入思考过程而非最终回答；
+ * - `tool/call` 事件 → 形如 `调用工具 <name>（<input摘要>）`，体现助手「决定调用工具」的思考决策。
+ *
+ * 返回有序 string[]，即「思考链 + 过程独白 + 工具决策」的完整思考过程。
+ * 与 `extractAssistantMessages`（仅取最终回答 text）形成双轨，互不重叠：
+ * 无 reasoning、无过程独白且无 tool/call 时返回空数组。
+ */
+export function extractAssistantThinking(events: readonly SessionHistoryEvent[]): string[] {
+  const answerSeq = finalAnswerSeq(events)
+  const steps: string[] = []
+  for (const entry of events) {
+    const { type, data, seq } = entry.event
+    if (type === EventType.ASSISTANT_MESSAGE) {
+      const d = data as unknown as AssistantMessageData
+      const blocks = d.message?.content ?? d.content
+      const reasoning = extractContentText(blocks, { include: ['reasoning'] })
+      if (reasoning) steps.push(reasoning)
+      // 仅「非最终回答」的 text 视为过程独白（最终回答的 text 由 extractAssistantMessages 独占）
+      if (seq !== answerSeq) {
+        const text = extractContentText(blocks, { include: ['text'] })
+        if (text) steps.push(text)
+      }
+    } else if (type === EventType.TOOL_CALL) {
+      const d = data as unknown as ToolCallData
+      const summary = summarizeToolInput(d.input)
+      steps.push(`调用工具 ${d.name}${summary ? `（${summary}）` : ''}`)
+    }
+  }
+  return steps
 }
 
 /** 提取工具写文件操作的路径（tool/call 中 name 为 write/edit 的 file_path） */

@@ -28,6 +28,8 @@ import {
   fetchAllSessionEvents,
   foldStats,
   extractUserMessages,
+  extractAssistantMessages,
+  extractAssistantThinking,
   extractFileOperations,
   extractSessionTitle,
   splitTurns,
@@ -266,6 +268,8 @@ export function apply(ctx: Context) {
         const items: SessionEventTagItem[] = segments.map((seg) => {
           const stats = foldStats(seg)
           const userMessageTexts = extractUserMessages(seg)
+          const assistantMessageTexts = extractAssistantMessages(seg)
+          const assistantThinkTexts = extractAssistantThinking(seg)
           const fileOperations = extractFileOperations(seg)
           const title = extractSessionTitle(seg)
           const turnStart = seg.find(
@@ -281,6 +285,8 @@ export function apply(ctx: Context) {
             assistantMessages: stats.assistantMessages,
             toolCalls: stats.toolCalls,
             userMessageTexts,
+            assistantMessageTexts,
+            assistantThinkTexts,
             fileOperations,
             startedAt: stats.startedAt,
             updatedAt: stats.updatedAt,
