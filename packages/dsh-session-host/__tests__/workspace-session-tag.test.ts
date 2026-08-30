@@ -19,6 +19,8 @@ const mockFoldStats = vi.fn()
 const mockExtractUserMessages = vi.fn()
 const mockExtractFileOperations = vi.fn()
 const mockExtractSessionTitle = vi.fn()
+const mockSplitTurns = vi.fn()
+const mockClassifyRoundEndReason = vi.fn()
 
 vi.mock('../src/utils/file-storage.js', () => ({
   readWorkspaceTags: vi.fn(async () => []),
@@ -44,6 +46,8 @@ vi.mock('../src/utils/session-history.js', () => ({
   extractUserMessages: (...args: any[]) => mockExtractUserMessages(...args),
   extractFileOperations: (...args: any[]) => mockExtractFileOperations(...args),
   extractSessionTitle: (...args: any[]) => mockExtractSessionTitle(...args),
+  splitTurns: (...args: any[]) => mockSplitTurns(...args),
+  classifyRoundEndReason: (...args: any[]) => mockClassifyRoundEndReason(...args),
   fetchSessionHistory: vi.fn(),
 }))
 
@@ -99,6 +103,8 @@ describe('workspace.session.tag 路由', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     mockFetchAllSessionEvents.mockResolvedValue({ events: defaultEvents, hasMore: false })
+    mockSplitTurns.mockReturnValue([defaultEvents])
+    mockClassifyRoundEndReason.mockReturnValue('completed')
     mockFoldStats.mockReturnValue(defaultStats)
     mockExtractUserMessages.mockReturnValue(['你好'])
     mockExtractFileOperations.mockReturnValue([])
@@ -176,9 +182,13 @@ describe('workspace.session.tag 路由', () => {
     expect(mockRes.writeHead).toHaveBeenCalledWith(200, expect.anything())
     const body = JSON.parse(mockRes.end.mock.calls[0][0])
     expect(body.ok).toBe(true)
-    expect(body.value.item).toMatchObject({
+    expect(body.value.hasMore).toBe(false)
+    expect(body.value.items).toHaveLength(1)
+    expect(body.value.items[0]).toMatchObject({
       sessionId: 'session-abc',
       title: '你好',
+      round: 1,
+      endReason: 'completed',
       turns: 1,
       userMessages: 1,
       assistantMessages: 1,
@@ -188,7 +198,6 @@ describe('workspace.session.tag 路由', () => {
       startedAt: 1000,
       updatedAt: 1004,
       totalEvents: 5,
-      hasMore: false,
     })
   })
 

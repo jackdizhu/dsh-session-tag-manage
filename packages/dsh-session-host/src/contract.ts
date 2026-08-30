@@ -84,12 +84,27 @@ export interface WorkspaceSessionTagRequest {
   maxMessages?: number
 }
 
+/** 轮次结束/异常原因 */
+export type RoundEndReason =
+  | 'completed'
+  | 'aborted'
+  | 'error'
+  | 'interrupted'
+  | 'max-tokens'
+  | 'blocked'
+  | 'ongoing'
+  | 'seed'
+
 /** 单个会话事件数据标签条目 */
 export interface SessionEventTagItem {
   /** 会话 ID */
   sessionId: string
   /** 会话标题 */
   title: string | null
+  /** 轮次序号（1-based，取自 turn/start.data.turn；纯前导段为 0） */
+  round: number
+  /** 本轮结束/异常原因 */
+  endReason: RoundEndReason
   /** 轮次数 */
   turns: number
   /** 用户消息数（仅 source.kind==='user'） */
@@ -108,8 +123,6 @@ export interface SessionEventTagItem {
   updatedAt: number | null
   /** 事件总数 */
   totalEvents: number
-  /** 是否还有更早的事件未读完 */
-  hasMore: boolean
 }
 
 /** 会话事件数据标签查询响应体 */
@@ -118,8 +131,10 @@ export interface WorkspaceSessionTagResponse {
   ok: boolean
   /** 成功时返回的数据 */
   value?: {
-    /** 会话事件数据标签条目 */
-    item: SessionEventTagItem
+    /** 按 turn 切分的会话事件数据标签条目数组 */
+    items: SessionEventTagItem[]
+    /** 会话事件流是否还有更早的分页未读完 */
+    hasMore: boolean
   }
   /** 失败时返回的错误信息 */
   error?: string

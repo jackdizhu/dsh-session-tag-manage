@@ -45,6 +45,8 @@ export {
   extractUserMessages,
   extractFileOperations,
   extractSessionTitle,
+  splitTurns,
+  classifyRoundEndReason,
 } from './session-history.js'
 export type {
   SessionHistoryEvent,

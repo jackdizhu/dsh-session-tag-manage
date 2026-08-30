@@ -89,22 +89,38 @@ export interface ToolCallStat {
   count: number
 }
 
+/** 轮次结束/异常原因（与宿主 contract.ts RoundEndReason 保持一致） */
+export type RoundEndReason =
+  | 'completed'
+  | 'aborted'
+  | 'error'
+  | 'interrupted'
+  | 'max-tokens'
+  | 'blocked'
+  | 'ongoing'
+  | 'seed'
+
+/** 单轮会话事件数据标签条目（与宿主 SessionEventTagItem 字段一致） */
+export interface SessionEventTagItem {
+  sessionId: string
+  title: string | null
+  round: number
+  endReason: RoundEndReason
+  turns: number
+  userMessages: number
+  assistantMessages: number
+  toolCalls: ToolCallStat[]
+  userMessageTexts: string[]
+  fileOperations: string[]
+  startedAt: number | null
+  updatedAt: number | null
+  totalEvents: number
+}
+
 /** workspace.session.tag 响应值 */
 export interface WorkspaceSessionTagValue {
-  item: {
-    sessionId: string
-    title: string | null
-    turns: number
-    userMessages: number
-    assistantMessages: number
-    toolCalls: ToolCallStat[]
-    userMessageTexts: string[]
-    fileOperations: string[]
-    startedAt: number | null
-    updatedAt: number | null
-    totalEvents: number
-    hasMore: boolean
-  }
+  items: SessionEventTagItem[]
+  hasMore: boolean
 }
 
 // ===== 通用请求函数 =====

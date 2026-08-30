@@ -30,7 +30,11 @@ import {
   extractUserMessages,
   extractFileOperations,
   extractSessionTitle,
+  splitTurns,
+  classifyRoundEndReason,
+  EventType,
 } from './utils/index.js'
+import type { TurnStartData } from './utils/index.js'
 
 /** 插件名称，符合 Cordis 插件规范 */
 export const name = 'dsh-session-tag-manage-host'
@@ -257,29 +261,35 @@ export function apply(ctx: Context) {
           return
         }
 
-        // 使用 utils 工具整理 events 数据
-        const stats = foldStats(events)
-        const userMessageTexts = extractUserMessages(events)
-        const fileOperations = extractFileOperations(events)
-        const title = extractSessionTitle(events)
+        // 使用 utils 工具，按 turn 切分后逐轮整合
+        const segments = splitTurns(events)
+        const items: SessionEventTagItem[] = segments.map((seg) => {
+          const stats = foldStats(seg)
+          const userMessageTexts = extractUserMessages(seg)
+          const fileOperations = extractFileOperations(seg)
+          const title = extractSessionTitle(seg)
+          const turnStart = seg.find(
+            (e) => e.event.type === EventType.TURN_START,
+          )?.event.data as unknown as TurnStartData | undefined
+          return {
+            sessionId,
+            title: title ?? stats.title,
+            round: turnStart?.turn ?? 0,
+            endReason: classifyRoundEndReason(seg),
+            turns: stats.turns,
+            userMessages: stats.userMessages,
+            assistantMessages: stats.assistantMessages,
+            toolCalls: stats.toolCalls,
+            userMessageTexts,
+            fileOperations,
+            startedAt: stats.startedAt,
+            updatedAt: stats.updatedAt,
+            totalEvents: stats.totalEvents,
+          }
+        })
 
-        const item: SessionEventTagItem = {
-          sessionId,
-          title: title ?? stats.title,
-          turns: stats.turns,
-          userMessages: stats.userMessages,
-          assistantMessages: stats.assistantMessages,
-          toolCalls: stats.toolCalls,
-          userMessageTexts,
-          fileOperations,
-          startedAt: stats.startedAt,
-          updatedAt: stats.updatedAt,
-          totalEvents: stats.totalEvents,
-          hasMore,
-        }
-
-        console.log(`[SessionTag] workspace.session.tag 查询成功: sessionId=${sessionId}, events=${events.length}, turns=${stats.turns}`)
-        rpcResponse(res, rpcId, { ok: true, value: { item } })
+        console.log(`[SessionTag] workspace.session.tag 查询成功: sessionId=${sessionId}, events=${events.length}, rounds=${items.length}`)
+        rpcResponse(res, rpcId, { ok: true, value: { items, hasMore } })
       } catch (err) {
         console.error(`[SessionTag] workspace.session.tag 查询失败:`, err)
         jsonResponse(res, 500, { ok: false, error: 'session-tag-query-failed' })

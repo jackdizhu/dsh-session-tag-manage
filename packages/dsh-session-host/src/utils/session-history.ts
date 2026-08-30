@@ -16,6 +16,9 @@ import {
   type DshRpcResult,
 } from './rpc-client.js'
 
+// RoundEndReason 由 contract.ts（类型枢纽）定义，此处仅做类型引用
+import type { RoundEndReason } from '../contract.js'
+
 // ===== 事件类型定义 =====
 
 /** 会话事件基础结构（session.history 返回的每个条目） */
@@ -89,6 +92,10 @@ export interface TurnStartData {
 /** turn/end 事件的 data 结构 */
 export interface TurnEndData {
   turn: number
+  /** 结束原因（部分 DSH 版本可能缺失） */
+  reason?: {
+    kind: 'completed' | 'aborted' | 'error' | 'interrupted' | 'max-tokens' | 'blocked'
+  }
 }
 
 /** step/start 事件的 data 结构 */
@@ -397,4 +404,76 @@ export function extractSessionTitle(events: readonly SessionHistoryEvent[]): str
     title = data.title
   }
   return title
+}
+
+// ===== 轮次切分与结束原因分类 =====
+
+/** endReason 合法取值（用于 classifyRoundEndReason 校验，未知 kind 回退 ongoing） */
+const ROUND_END_REASONS: RoundEndReason[] = [
+  'completed',
+  'aborted',
+  'error',
+  'interrupted',
+  'max-tokens',
+  'blocked',
+  'ongoing',
+  'seed',
+]
+
+/**
+ * 将事件流按 turn/start 边界切分为多个轮次段。
+ * 首条 turn/start 之前的前导事件（session/end-seed、session/title、request/header 等）并入首个 turn 轮次，不丢失任何事件。
+ *
+ * @param events - 已按 seq 升序的事件列表
+ * @returns 轮次段数组（顺序即轮次顺序），不含空段
+ */
+export function splitTurns(events: readonly SessionHistoryEvent[]): SessionHistoryEvent[][] {
+  const segments: SessionHistoryEvent[][] = []
+  let current: SessionHistoryEvent[] | null = null
+  let leading: SessionHistoryEvent[] = []
+
+  for (const entry of events) {
+    if (entry.event.type === EventType.TURN_START) {
+      // 开启新轮次：前导事件并入本段
+      current = [...leading, entry]
+      leading = []
+      segments.push(current)
+    } else if (current) {
+      current.push(entry)
+    } else {
+      // 尚未遇到首个 turn/start：暂存为前导事件
+      leading.push(entry)
+    }
+  }
+
+  // 纯前导段（整段无 turn/start）：作为单条 seed 段
+  if (segments.length === 0 && leading.length > 0) {
+    segments.push(leading)
+  }
+
+  return segments
+}
+
+/**
+ * 根据轮次段事件分类该轮的结束/异常原因。
+ * - 取该轮最后一条 turn/end 的 reason.kind → 对应枚举值；
+ * - 末轮且无 turn/end（中断/进行中）→ ongoing；
+ * - 纯前导段（无 turn/start）→ seed。
+ *
+ * @param events - 单个轮次段事件
+ * @returns 结束原因枚举
+ */
+export function classifyRoundEndReason(events: readonly SessionHistoryEvent[]): RoundEndReason {
+  const hasTurnStart = events.some((e) => e.event.type === EventType.TURN_START)
+  if (!hasTurnStart) return 'seed'
+
+  let lastEndKind: string | undefined
+  for (const entry of events) {
+    if (entry.event.type === EventType.TURN_END) {
+      const data = entry.event.data as unknown as TurnEndData
+      lastEndKind = data.reason?.kind
+    }
+  }
+  if (!lastEndKind || !ROUND_END_REASONS.includes(lastEndKind as RoundEndReason)) return 'ongoing'
+  return lastEndKind as RoundEndReason
 }

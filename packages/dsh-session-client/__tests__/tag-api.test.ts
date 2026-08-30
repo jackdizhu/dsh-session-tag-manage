@@ -173,20 +173,24 @@ describe('tag-api', () => {
         json: async () => ({
           ok: true,
           value: {
-            item: {
-              sessionId: 'session-abc',
-              title: '测试',
-              turns: 1,
-              userMessages: 1,
-              assistantMessages: 1,
-              toolCalls: [],
-              userMessageTexts: ['你好'],
-              fileOperations: [],
-              startedAt: 1000,
-              updatedAt: 2000,
-              totalEvents: 5,
-              hasMore: false,
-            },
+            items: [
+              {
+                sessionId: 'session-abc',
+                title: '测试',
+                round: 1,
+                endReason: 'completed',
+                turns: 1,
+                userMessages: 1,
+                assistantMessages: 1,
+                toolCalls: [],
+                userMessageTexts: ['你好'],
+                fileOperations: [],
+                startedAt: 1000,
+                updatedAt: 2000,
+                totalEvents: 5,
+              },
+            ],
+            hasMore: false,
           },
         }),
       })
@@ -205,15 +209,15 @@ describe('tag-api', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        expect(result.value.item.sessionId).toBe('session-abc')
-        expect(result.value.item.turns).toBe(1)
+        expect(result.value.items[0].sessionId).toBe('session-abc')
+        expect(result.value.items[0].turns).toBe(1)
       }
     })
 
     it('不传 maxMessages 时 payload 中不应包含该字段', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, value: { item: {} } }),
+        json: async () => ({ ok: true, value: { items: [{}], hasMore: false } }),
       })
 
       await fetchWorkspaceSessionTag('session-xyz')
