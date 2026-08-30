@@ -8,6 +8,7 @@
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { fetchWorkspaceListTag, fetchWorkspaceSessionTag } from './utils/tag-api.js'
 
 /** 日志前缀，便于在浏览器控制台中过滤 */
 const TAG = '[SessionTag]'/** 插件名称，符合 Cordis 插件规范 */
@@ -213,9 +214,6 @@ export function apply(ctx: ClientContext) {
       console.log(`${TAG} 无法获取 Canvas 2D 上下文`)
     }
 
-    // 工作区会话标签查询路由（与 host contract.ts 保持一致）
-    const TAG_LIST_ROUTE = '/dsh-session-tag-manage/workspace.list.tag'
-
     // 绑定点击事件：调用服务端接口并打印响应
     canvas.addEventListener('click', async (event) => {
       console.log(`${TAG} Canvas clicked:`, {
@@ -232,17 +230,14 @@ export function apply(ctx: ClientContext) {
         ? getActiveWorkspaceId(workspacesSnapshot.items, sessionCurrent)
         : null
 
-      // 调用工作区会话标签查询接口
-      try {
-        const res = await fetch(TAG_LIST_ROUTE, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workspaceId: folderActive ?? '' }),
-        })
-        const data = await res.json()
-        console.log(`${TAG} 接口响应 ${TAG_LIST_ROUTE}:`, data)
-      } catch (err) {
-        console.error(`${TAG} 接口调用失败 ${TAG_LIST_ROUTE}:`, err)
+      // 调用工作区会话标签查询接口（带 rpcId 信封）
+      const tagResult = await fetchWorkspaceListTag(folderActive ?? '')
+      console.log(`${TAG} workspace.list.tag 结果:`, tagResult)
+
+      // 如果有当前会话，同时查询会话事件数据标签
+      if (sessionCurrent) {
+        const sessionTagResult = await fetchWorkspaceSessionTag(sessionCurrent)
+        console.log(`${TAG} workspace.session.tag 结果:`, sessionTagResult)
       }
     })
 

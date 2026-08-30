@@ -5,6 +5,7 @@
  * - /dsh-session-host-test：无参返回当前服务端时间戳
  * - /dsh-session-tag-manage/workspace.list.tag：按工作区查询会话标签
  * - /dsh-session-tag-manage/workspace.tag.set：按工作区写入会话标签
+ * - /dsh-session-tag-manage/workspace.session.tag：按会话查询事件数据标签
  *
  * 存储结构：~/.dsh/storages/dsh_session_tag__{workspaceId}.json
  *
@@ -15,12 +16,20 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   WORKSPACE_LIST_TAG_ROUTE,
   WORKSPACE_TAG_SET_ROUTE,
+  WORKSPACE_SESSION_TAG_ROUTE,
   type SessionTagEntry,
+  type SessionEventTagItem,
 } from './contract.js'
 import {
   readWorkspaceTags,
   writeWorkspaceTags,
   deleteWorkspaceFile,
+  dshRpcCall,
+  fetchAllSessionEvents,
+  foldStats,
+  extractUserMessages,
+  extractFileOperations,
+  extractSessionTitle,
 } from './utils/index.js'
 
 /** 插件名称，符合 Cordis 插件规范 */
@@ -28,6 +37,14 @@ export const name = 'dsh-session-tag-manage-host'
 
 /** 注入依赖列表 */
 export const inject = ['webServer']
+
+/**
+ * 通用 JSON 响应辅助函数
+ */
+function jsonResponse(res: any, status: number, data: unknown) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify(data))
+}
 
 /**
  * 读取 POST 请求体
@@ -39,11 +56,42 @@ async function readBody(req: any): Promise<string> {
 }
 
 /**
- * 通用 JSON 响应辅助函数
+ * 解析 RPC 信封：从请求体中提取 payload 和 rpcId
+ *
+ * 支持两种格式：
+ * 1. DSH RPC 信封：{ type: 'client-request', rpcId, method, payload }
+ * 2. 简单 JSON：{ workspaceId: '...' }（直接作为 payload 返回）
  */
-function jsonResponse(res: any, status: number, data: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify(data))
+async function parseRpcEnvelope<T>(req: any): Promise<{ payload: T; rpcId: string }> {
+  const raw = await readBody(req)
+  let parsed: any
+  try { parsed = JSON.parse(raw) } catch { parsed = {} }
+
+  // DSH RPC 信封格式
+  if (parsed && typeof parsed === 'object' && parsed.type === 'client-request' && parsed.payload) {
+    return { payload: parsed.payload as T, rpcId: parsed.rpcId ?? '' }
+  }
+
+  // 简单 JSON 格式（兼容旧客户端）
+  return { payload: parsed as T, rpcId: '' }
+}
+
+/**
+ * 用 RPC 信封包装响应
+ *
+ * 如果请求带了 rpcId，则返回标准信封格式；
+ * 否则返回简单 JSON 格式（兼容旧客户端）。
+ */
+function rpcResponse(res: any, rpcId: string, data: unknown) {
+  if (rpcId) {
+    jsonResponse(res, 200, {
+      type: 'server-response',
+      rpcId,
+      result: data,
+    })
+  } else {
+    jsonResponse(res, 200, data)
+  }
 }
 
 /**
@@ -106,10 +154,8 @@ export function apply(ctx: Context) {
         return
       }
 
-      let parsed: { workspaceId?: string }
-      try { parsed = JSON.parse(await readBody(req)) } catch { parsed = {} }
-
-      const { workspaceId } = parsed
+      const { payload, rpcId } = await parseRpcEnvelope<{ workspaceId?: string }>(req)
+      const { workspaceId } = payload
       if (!workspaceId) {
         jsonResponse(res, 400, { ok: false, error: 'workspace-id-required' })
         return
@@ -122,7 +168,7 @@ export function apply(ctx: Context) {
           await writeWorkspaceTags(workspaceId, [])
         }
         console.log(`[SessionTag] workspace.list.tag 查询成功: workspaceId=${workspaceId}, items=${items.length}`)
-        jsonResponse(res, 200, { ok: true, value: { items } })
+        rpcResponse(res, rpcId, { ok: true, value: { items } })
       } catch (err) {
         console.error(`[SessionTag] workspace.list.tag 读取失败:`, err)
         jsonResponse(res, 500, { ok: false, error: 'storage-read-failed' })
@@ -140,10 +186,13 @@ export function apply(ctx: Context) {
         return
       }
 
-      let parsed: { workspaceId?: string; sessions?: SessionTagEntry[]; deleteWorkspace?: boolean }
-      try { parsed = JSON.parse(await readBody(req)) } catch { parsed = {} }
+      const { payload, rpcId } = await parseRpcEnvelope<{
+        workspaceId?: string
+        sessions?: SessionTagEntry[]
+        deleteWorkspace?: boolean
+      }>(req)
 
-      const { workspaceId, sessions, deleteWorkspace } = parsed
+      const { workspaceId, sessions, deleteWorkspace } = payload
       if (!workspaceId) {
         jsonResponse(res, 400, { ok: false, error: 'workspace-id-required' })
         return
@@ -163,10 +212,77 @@ export function apply(ctx: Context) {
           console.log(`[SessionTag] workspace.tag.set 写入成功: workspaceId=${workspaceId}, count=${sessions.length}`)
         }
 
-        jsonResponse(res, 200, { ok: true, value: { count: sessions.length } })
+        rpcResponse(res, rpcId, { ok: true, value: { count: sessions.length } })
       } catch (err) {
         console.error(`[SessionTag] workspace.tag.set 写入失败:`, err)
         jsonResponse(res, 500, { ok: false, error: 'storage-write-failed' })
+      }
+    },
+  })
+
+  // 会话事件数据标签查询路由
+  // 调用内置 session.history 接口获取事件流，使用 utils 工具整理数据
+  ctx.webServer.register({
+    kind: 'exact',
+    path: WORKSPACE_SESSION_TAG_ROUTE,
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        jsonResponse(res, 405, { ok: false, error: 'method-not-allowed' })
+        return
+      }
+
+      const { payload, rpcId } = await parseRpcEnvelope<{
+        sessionId?: string
+        maxMessages?: number
+      }>(req)
+
+      const { sessionId, maxMessages } = payload
+      if (!sessionId) {
+        jsonResponse(res, 400, { ok: false, error: 'session-id-required' })
+        return
+      }
+
+      try {
+        // 通过 dshRpcCall 调用内置 session.history 接口获取事件流
+        const dshBaseUrl = `http://127.0.0.1:${process.env.DSH_WEB_PORT ?? 3080}`
+        const { events, hasMore, error } = await fetchAllSessionEvents(
+          dshBaseUrl,
+          sessionId,
+          { maxMessages: maxMessages ?? 200 },
+        )
+
+        if (error) {
+          console.error(`[SessionTag] session.history 调用失败: sessionId=${sessionId}, error=${error}`)
+          jsonResponse(res, 500, { ok: false, error: `history-fetch-failed: ${error}` })
+          return
+        }
+
+        // 使用 utils 工具整理 events 数据
+        const stats = foldStats(events)
+        const userMessageTexts = extractUserMessages(events)
+        const fileOperations = extractFileOperations(events)
+        const title = extractSessionTitle(events)
+
+        const item: SessionEventTagItem = {
+          sessionId,
+          title: title ?? stats.title,
+          turns: stats.turns,
+          userMessages: stats.userMessages,
+          assistantMessages: stats.assistantMessages,
+          toolCalls: stats.toolCalls,
+          userMessageTexts,
+          fileOperations,
+          startedAt: stats.startedAt,
+          updatedAt: stats.updatedAt,
+          totalEvents: stats.totalEvents,
+          hasMore,
+        }
+
+        console.log(`[SessionTag] workspace.session.tag 查询成功: sessionId=${sessionId}, events=${events.length}, turns=${stats.turns}`)
+        rpcResponse(res, rpcId, { ok: true, value: { item } })
+      } catch (err) {
+        console.error(`[SessionTag] workspace.session.tag 查询失败:`, err)
+        jsonResponse(res, 500, { ok: false, error: 'session-tag-query-failed' })
       }
     },
   })

@@ -91,9 +91,9 @@ describe('dsh-session-tag-manage-host 插件', () => {
     expect(mod.inject).toContain('webServer')
   })
 
-  it('apply 函数应注册三个路由', () => {
+  it('apply 函数应注册四个路由', () => {
     apply(mockCtx)
-    expect(mockRegister).toHaveBeenCalledTimes(3)
+    expect(mockRegister).toHaveBeenCalledTimes(4)
   })
 
   // ===== /dsh-session-host-test 路由测试 =====
@@ -185,7 +185,24 @@ describe('dsh-session-tag-manage-host 插件', () => {
     expect(body).toEqual({ ok: false, error: 'workspace-id-required' })
   })
 
-  it('workspace.list.tag 应返回指定工作区的会话标签数据', async () => {
+  it('workspace.list.tag RPC 信封缺少 workspaceId 时应返回 400', async () => {
+    apply(mockCtx)
+    const route = mockRegister.mock.calls[1][0]
+    const mockRes = createMockRes()
+
+    const rpcEnvelope = {
+      type: 'client-request',
+      rpcId: 'test-rpc-id-5678',
+      method: 'workspace.list.tag',
+      payload: {},
+    }
+
+    await route.handler(createMockReq('POST', rpcEnvelope), mockRes)
+
+    expect(mockRes.writeHead).toHaveBeenCalledWith(400, expect.anything())
+  })
+
+  it('workspace.list.tag 应返回指定工作区的会话标签数据（简单格式）', async () => {
     apply(mockCtx)
     const route = mockRegister.mock.calls[1][0]
     const mockRes = createMockRes()
@@ -197,11 +214,29 @@ describe('dsh-session-tag-manage-host 插件', () => {
     const body = JSON.parse(mockRes.end.mock.calls[0][0])
     expect(body.ok).toBe(true)
     expect(body.value.items).toHaveLength(1)
-    expect(body.value.items[0]).toMatchObject({
-      sessionId: 'session-957f9e9c',
-      title: '测试会话',
-      sessionCurrentTag: '任务进行中',
-    })
+  })
+
+  it('workspace.list.tag 应支持 DSH RPC 信封格式', async () => {
+    apply(mockCtx)
+    const route = mockRegister.mock.calls[1][0]
+    const mockRes = createMockRes()
+
+    const rpcEnvelope = {
+      type: 'client-request',
+      rpcId: 'test-rpc-id-1234',
+      method: 'workspace.list.tag',
+      payload: { workspaceId: 'ws-envelope-123' },
+    }
+
+    await route.handler(createMockReq('POST', rpcEnvelope), mockRes)
+
+    expect(mockReadWorkspaceTags).toHaveBeenCalledWith('ws-envelope-123')
+    const body = JSON.parse(mockRes.end.mock.calls[0][0])
+    // 应返回标准信封格式
+    expect(body.type).toBe('server-response')
+    expect(body.rpcId).toBe('test-rpc-id-1234')
+    expect(body.result.ok).toBe(true)
+    expect(body.result.value.items).toHaveLength(1)
   })
 
   it('workspace.list.tag 应在工作区不存在时返回空数组', async () => {

@@ -174,6 +174,7 @@ describe('dsh-session-tag-manage-client 插件', () => {
 
   it('Canvas 点击应调用 workspace.list.tag 接口', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: () => Promise.resolve({ ok: true, value: { items: [] } }),
     })
     vi.stubGlobal('fetch', mockFetch)
@@ -191,6 +192,15 @@ describe('dsh-session-tag-manage-client 插件', () => {
         })
       )
     })
+
+    // 验证请求体包含 rpcId 信封
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      type: 'client-request',
+      method: 'workspace.list.tag',
+      payload: { workspaceId: '' },
+    })
+    expect(body.rpcId).toMatch(/^[0-9a-f-]{36}$/)
 
     vi.unstubAllGlobals()
   })
