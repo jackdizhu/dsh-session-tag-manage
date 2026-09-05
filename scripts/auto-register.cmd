@@ -5,7 +5,7 @@ REM DSH Session Tag Manage - Auto Register (Windows)
 REM ========================================
 REM Usage: scripts\auto-register.cmd
 REM ========================================
-REM 委托给跨平台 Node 主脚本，统一逻辑并保证幂等写入 client patch 条目
+REM 委托给跨平台 Node 主脚本，统一逻辑并保证幂等写入 dsh-debugger patch 条目
 REM ========================================
 
 setlocal

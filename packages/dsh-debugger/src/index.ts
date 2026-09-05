@@ -34,13 +34,16 @@ import {
 import { upsertSkill, recordUsage } from './records.js'
 import { filterSkillCatalog } from './catalog.js'
 import { installDebugMode } from './debug.js'
+import { DebuggerState } from './debug-state.js'
+import { installDebuggerCommand, type DebuggerAction } from './commands/index.js'
 
 export const name = 'dsh-debugger'
-// 仅注入宿主根插件可直达的服务：agents / skills。
+// 仅注入宿主根插件可直达的服务：agents / skills / commands。
 // llm/stream 与 storage 不可在宿主根插件 inject（同 agent.ctx.skills 限制，二者均在嵌套
 // ctx 上提供）；但 llm/stream 事件会冒泡到宿主根，故以 ctx.on 监听拦截；storage 则通过
 // 受 try/catch 保护的 ctx.storage 访问走 KV 单元，不可达时回退 os.tmpdir 临时文件。
-export const inject = ['agents', 'skills']
+// commands 承载 /debugger 指令注册（Web/CLI 指令平面唯一入口，不产生模型消息）。
+export const inject = ['agents', 'skills', 'commands']
 
 /** 单会话运行状态 */
 interface SessionState {
@@ -76,8 +79,9 @@ interface ContentBlock {
 function userTextFromEvents(events: SessionEvent[]): string {
   const parts: string[] = []
   for (const ev of events) {
-    if (ev.type === 'user/message' && ev.data?.source?.kind === 'user') {
-      const content = ev.data.content as ContentBlock[] | undefined
+    const source = ev.data?.source as { kind?: string } | undefined
+    if (ev.type === 'user/message' && source?.kind === 'user') {
+      const content = ev.data?.content as ContentBlock[] | undefined
       for (const b of content ?? []) if (b.type === 'text') parts.push(b.text)
     }
   }
@@ -95,14 +99,43 @@ function userTextFromMessages(messages: AgentMessage[]): string {
   return parts.join('\n')
 }
 
+/**
+ * 匹配"整条消息即 /debugger 指令"的用户文本（headless 兜底判定）。
+ *
+ * 仅当某条用户消息整体形如 `/debugger [on|off|status]` 时才视为指令，
+ * 避免把"介绍一下 /debugger 指令"之类的普通提问误判为开关操作。
+ * Web/CLI 场景指令已被指令平面消费、不会产生同文本模型消息，故此处
+ * 天然只在 headless 生效，无需环境判断。
+ */
+const DEBUGGER_LINE_RE = /^\/debugger(?:\s+(\S+))?$/i
+
+/** 判定本轮用户消息是否为 /debugger 兜底指令；返回动作或 undefined（非指令） */
+export function debuggerFallbackAction(messages: AgentMessage[]): DebuggerAction | undefined {
+  for (const m of messages) {
+    const isUser = m.role === 'user' || m.source?.kind === 'user'
+    if (!isUser) continue
+    for (const b of m.content ?? []) {
+      if (b.type !== 'text') continue
+      const match = DEBUGGER_LINE_RE.exec(b.text.trim())
+      if (!match) continue
+      const arg = match[1]?.toLowerCase()
+      if (arg === undefined) return 'on' // 无参数等同 on（用户确认的默认行为）
+      if (arg === 'on' || arg === 'off' || arg === 'status') return arg
+      return undefined // 参数不合法：不当作指令处理，交由正常流程
+    }
+  }
+  return undefined
+}
+
 /** 从事件抽取"实际被调用的技能名"（tool/call(name=skill, args.name) 或 skill-invocation） */
 function skillNameFromEvent(ev: SessionEvent): string | undefined {
   if (ev.type === 'tool/call' && ev.data?.name === 'skill') {
     const args = ev.data.args as { name?: string } | undefined
     return args?.name
   }
-  if (ev.type === 'user/message' && ev.data?.source?.kind === 'skill-invocation') {
-    return ev.data.source.name as string | undefined
+  const source = ev.data?.source as { kind?: string; name?: string } | undefined
+  if (ev.type === 'user/message' && source?.kind === 'skill-invocation') {
+    return source.name
   }
   return undefined
 }
@@ -163,8 +196,10 @@ export function apply(ctx: Context): void {
     yield* next()
   })
 
-  // 调试模式：拦截真实 LLM 调用，将请求参数写入 storageDomain（默认开启）
-  installDebugMode(ctx, store)
+  // 调试模式：会话级开关状态机 + /debugger 指令注册 + llm/stream 拦截（默认关闭）
+  const debugState = new DebuggerState()
+  installDebuggerCommand(ctx, debugState, store)
+  installDebugMode(ctx, store, debugState)
 
   const lookupFor = (agent: Agent): SkillViewOptions => ({
     cwd: agent.session.header.cwd,
@@ -327,11 +362,26 @@ export function apply(ctx: Context): void {
   void (null as unknown as SessionStartPayload)
 
   ctx.on('agent/pre-step', async (payload: PreStepPayload, next: NextFn) => {
+    const sid = payload.agent?.session?.id
+    // headless 兜底（方案 B）：单发 prompt 无指令适配器，`/debugger ...` 以普通用户
+    // 消息直达。命中即更新会话级开关：
+    //   on（含无参）→ 透传本轮：状态即时生效，本轮 llm/stream 拦截回复即"已开启"确认；
+    //   off / status → reject 静默吞掉，避免指令文本进模型（PreStepDecision reject
+    //   无文本字段，无法回执，属框架已知限制）。
+    if (sid !== undefined) {
+      const action = debuggerFallbackAction(payload.messages)
+      if (action === 'on') debugState.enable(sid)
+      else if (action === 'off') {
+        debugState.disable(sid)
+        return { kind: 'reject' }
+      } else if (action === 'status') {
+        return { kind: 'reject' }
+      }
+    }
     // 关键顺序：技能目录（<system-reminder><available_skills>，位于 messages 中）是在
     // next() 内部生成的。若在 next() 之后才注册 shadow，首轮目录就已定稿，禁用技能仍会
     // 出现在上下文中（实测首轮 messages 含全部 lark-* 45 处）。故先完成初始化/协调，
     // 再交回框架构建本轮。
-    const sid = payload.agent?.session?.id
     if (sid && !sessions.has(sid)) {
       await initSession(payload.agent)
     }
@@ -345,5 +395,8 @@ export function apply(ctx: Context): void {
 
   ctx.on('agent/disposed', (agent?: { session?: { id?: string } }) => {
     cleanupSession(agent)
+    // 调试开关随会话销毁一并清理（会话级语义：新会话默认关闭）
+    const sid = agent?.session?.id
+    if (sid !== undefined) debugState.drop(sid)
   })
 }

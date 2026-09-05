@@ -116,7 +116,7 @@ export async function applyShadows(
         description: original.description,
         content: '',
         invocation: { modelInvocable: false, userInvocable: true },
-      }),
+      }) as () => void,
     )
   }
   return disposers
@@ -151,7 +151,7 @@ export async function reconcileShadows(
         description: original.description,
         content: '',
         invocation: { modelInvocable: false, userInvocable: true },
-      }),
+      }) as () => void,
     )
   }
 }

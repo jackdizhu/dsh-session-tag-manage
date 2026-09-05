@@ -64,9 +64,13 @@ export interface HiddenRecord {
   at: string
 }
 
-/** 调试模式配置：默认开启，在真实 LLM 接口调用前拦截，将请求参数写入 storageDomain（落盘临时文件） */
+/** 调试模式配置：默认关闭；经 `/debugger` 指令按会话开启（会话级），或手工置 true 作为全局兜底 */
 export interface DebugConfig {
-  /** 是否启用调试拦截；默认 true */
+  /**
+   * 是否启用调试拦截。
+   * 默认 false（调试默认关闭）；运行时由 `/debugger` 指令按会话控制（内存态），
+   * 本字段置 true 时对全部会话强制生效（拦截判定 = 会话级开关 ∪ 本字段）。
+   */
   enabled: boolean
   /** storageDomain 领域名（经 json 后端持久化到 ~/.dsh/storages/<domain>.json） */
   domain: string
@@ -104,7 +108,7 @@ export function defaultConfig(): AutoEnableConfig {
     usage: {},
     hidden: {},
     debug: {
-      enabled: true,
+      enabled: false,
       domain: 'dsh-llm-debug',
       reply: '[DEBUG] LLM call blocked; request params recorded to a temp file.',
     },

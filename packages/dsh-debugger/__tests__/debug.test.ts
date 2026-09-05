@@ -16,6 +16,7 @@ vi.mock('zod', () => ({
 }))
 
 import { installDebugMode } from '../src/debug.js'
+import { DebuggerState } from '../src/debug-state.js'
 
 /** 收集 async iterable 的全部分块 */
 async function collect(gen: AsyncIterable<unknown>): Promise<unknown[]> {
@@ -48,9 +49,9 @@ describe('debug mode (llm/stream interception)', () => {
     }
   })
 
-  it('调试开启：拦截真实调用，记录参数，合成响应（不含 signal）', async () => {
+  it('调试开启（配置兜底）：拦截真实调用，记录参数，合成响应（不含 signal）', async () => {
     store = { get: () => ({ debug: { enabled: true, domain: 'dsh-llm-debug', reply: 'DEBUG_REPLY' } }) }
-    installDebugMode(ctx, store)
+    installDebugMode(ctx, store, new DebuggerState())
     expect(listener).toBeDefined()
 
     const signal = new AbortController().signal
@@ -87,12 +88,30 @@ describe('debug mode (llm/stream interception)', () => {
 
   it('调试关闭：透传 next()，不记录参数', async () => {
     store = { get: () => ({ debug: { enabled: false, domain: 'dsh-llm-debug', reply: 'x' } }) }
-    installDebugMode(ctx, store)
+    installDebugMode(ctx, store, new DebuggerState())
     const next = vi.fn(() => (async function* () { yield { type: 'finish', reason: { kind: 'stop' } } })())
     const gen = listener!({ provider: 'p', model: 'm', messages: [] }, next)
     await collect(gen)
     expect(next).toHaveBeenCalledOnce()
     await new Promise((r) => setTimeout(r, 10))
     expect(put).toBeUndefined() // 未记录（on 中未赋值 put 说明 table 未被调用）
+  })
+
+  it('会话级开关（/debugger on）：配置兜底关闭时，开启会话仍被拦截', async () => {
+    store = { get: () => ({ debug: { enabled: false, domain: 'dsh-llm-debug', reply: 'DEBUG_REPLY' } }) }
+    const state = new DebuggerState()
+    state.enable('sess-1')
+    installDebugMode(ctx, store, state)
+
+    const next = vi.fn(() => (async function* () {})())
+    const gen = listener!({ provider: 'p', model: 'm', sessionId: 'sess-1', messages: [] }, next)
+    const chunks = await collect(gen)
+    expect(next).not.toHaveBeenCalled()
+    expect((chunks[1] as { text: string }).text).toContain('DEBUG_REPLY')
+
+    // 其它会话不受影响：仍透传
+    const next2 = vi.fn(() => (async function* () {})())
+    await collect(listener!({ provider: 'p', model: 'm', sessionId: 'sess-2', messages: [] }, next2))
+    expect(next2).toHaveBeenCalledOnce()
   })
 })
