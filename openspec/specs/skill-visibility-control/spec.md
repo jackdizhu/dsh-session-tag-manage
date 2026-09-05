@@ -54,6 +54,60 @@
 - **WHEN** 配置文件被改为 `disabledSkills:["a","b"]` 且 `fs.watch` 触发
 - **THEN** 下一轮 pre-step 后 `b` 也被注册为 `modelInvocable=false` 并从目录移除
 
+### Requirement: shadow 注册须在技能目录定稿前一次性判定
+
+技能目录以 `<system-reminder><available_skills>` 形式注入在 **`messages`** 中（不在 `system`、也不在 `tools`），由框架在 `agent/pre-step` 的 `next()` 内部生成。宿主插件 SHALL 在 `next()` **之前**完成 shadow 的注册/撤销，否则本轮目录已经定稿、过滤失效。
+
+**`register(shadow)` 可撤销，但同名重复注册会失效**：框架 `SkillRegistry.register()` 对同名词条是
+**first-wins**——若该层 runtime 表已有同名条目，再次 `register` 会被忽略（仅 warn）并返回
+**no-op disposer**，该 disposer 撤销不掉第一次的注册。这正是此前"隐藏后恢复不了"的**真正原因**
+（并非 dispose 无效）。只要**同一技能名只注册一次**，`dispose()` 即执行 `layer.runtime.delete(name)`
+并触发 `invalidateCache()`，原技能重新出现在目录中（实测：隐藏 26 个后全部 dispose，目录恢复 27 个技能）。因此：
+
+- 插件 SHALL **不在** `agent/session-start` 初始化：此时 `agent.session.events` 通常尚无首条用户消息，
+  据此判定会把本应可见的技能误隐藏；且 session-start 与 pre-step 双重初始化会触发 first-wins，
+  使第二次注册的 disposer 变为 no-op，之后再也无法撤销。
+- 插件 SHALL 在 `agent/pre-step` 中、以本轮 `payload.messages` 的真实用户文本判定，并在 `next()` 前完成注册/撤销。
+- 插件 SHALL 用 promise 对同一 sessionId 的初始化去重（`initializing` map），杜绝并发重复注册。
+
+#### Scenario: 无关键字时首轮目录即不含该前缀族
+
+- **GIVEN** `keywordRules` 含 `skillPrefix:"lark-"`，用户输入"你好"
+- **WHEN** 首轮 `agent/pre-step` 在 `next()` 前完成判定
+- **THEN** 本轮 `messages` 中的 `<available_skills>` 不含任何 `lark-*` 技能（全部 lark 时整个目录块消失）
+
+#### Scenario: 关键字命中时首轮目录即含该前缀族
+
+- **GIVEN** 同上配置，用户输入"帮我用飞书审批创建一个请假单"
+- **WHEN** 首轮 `agent/pre-step` 在 `next()` 前完成判定
+- **THEN** 本轮 `messages` 中的 `<available_skills>` 包含全部 `lark-*` 技能（实测 27 个）
+- **AND** 未注册任何 shadow（避免"先隐藏再撤销"的不可逆churn）
+
+### Requirement: 按 sessionId 登记被隐藏技能以支持命中后恢复
+
+宿主插件 SHALL 在配置中维护 `hidden: Record<sessionId, { skills: string[]; at: string }>`，
+记录每个会话**当前仍被 shadow 隐藏**的技能名，用于后续关键字命中时精确恢复，并作为审计依据。
+disposer 是函数、无法序列化，故落盘只记技能名；实际恢复依赖进程内 `sessions` 持有的 disposers。
+
+- 初始化后 SHALL 登记 `[...disposers.keys()]`；
+- `reconcileShadows` 撤销后 SHALL 同步更新为剩余仍未撤销的技能名；
+- 会话销毁（`agent/disposed`）SHALL 删除该 sessionId 的登记；
+- 登记表 SHALL 按 `at` 裁剪，最多保留最近 50 个会话（headless 不一定触发 disposed，防止无界增长）。
+
+#### Scenario: 隐藏后命中关键字可恢复
+
+- **GIVEN** 首轮无关键字，26 个 `lark-*` 被 shadow 隐藏并登记进 `hidden[sessionId]`
+- **WHEN** 后续轮次用户消息含"飞书"，插件在 `next()` 前调用 `reconcileShadows` 撤销
+- **THEN** 这些技能重新出现在 `<available_skills>`（实测恢复 27 个）
+- **AND** `hidden[sessionId]` 同步缩减/移除，反映"仍被隐藏"的真实集合
+
+#### Scenario: 登记与真实状态一致
+
+- **GIVEN** 用户输入"你好"（无关键字）
+- **WHEN** 首轮 pre-step 完成
+- **THEN** `hidden` 中该 sessionId 记录 26 个技能名
+- **AND** 输入含"飞书"的另一会话**不产生** hidden 登记（未注册任何 shadow）
+
 ### Requirement: 配置落盘不得阻断会话或启动
 
 `records.flush()` SHALL 保证**不抛异常**：优先原子写（写 `<file>.tmp` 后 `renameSync` 替换）；Windows 上 rename 覆写已存在文件常因目标被其他进程/观察器/杀毒软件占用而抛 `EPERM`，此时 SHALL 依次降级为 `copyFileSync`（原地覆盖内容，保留文件条目与既有 watcher）与直写目标文件；全部路径失败时 SHALL 返回 `false` 并静默放弃，仅影响审计记录。

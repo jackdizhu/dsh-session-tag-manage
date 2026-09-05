@@ -29,7 +29,10 @@ import {
   reconcileShadows,
   keywordFor,
 } from './visibility.js'
-import { upsertSkill, recordUsage, flush } from './records.js'
+// 落盘统一走 store.flush()（会记录"自己写出的内容"，供 watch 回调跳过自身写入），
+// 不再直接调用 records.flush，避免 watch→reload 丢弃本轮内存变更。
+import { upsertSkill, recordUsage } from './records.js'
+import { filterSkillCatalog } from './catalog.js'
 import { installDebugMode } from './debug.js'
 
 export const name = 'dsh-skills-auto-enable'
@@ -113,6 +116,52 @@ export function apply(ctx: Context): void {
   store.watch(() => {})
 
   const sessions = new Map<string, SessionState>()
+  /**
+   * 正在初始化中的会话（sessionId → promise）。
+   *
+   * 必须防并发：框架 `register` 对同名词条是 **first-wins**，重复注册会被忽略并返回
+   * **no-op disposer**，导致后续 dispose 撤销不掉第一次的注册（表现为"隐藏后恢复不了"）。
+   * 用 promise 去重可保证同一会话只初始化一次，disposers 始终有效。
+   */
+  const initializing = new Map<string, Promise<void>>()
+
+  /** hidden 登记表保留的最大会话数（按 at 时间裁剪最旧的，避免无界增长） */
+  const MAX_HIDDEN_SESSIONS = 50
+
+  /** 按 sessionId 登记当前被隐藏的技能名（落盘审计，并避免重复注册） */
+  const recordHidden = (sid: string, names: string[]): void => {
+    const cfg = store.get()
+    if (names.length === 0) delete cfg.hidden[sid]
+    else cfg.hidden[sid] = { skills: [...names], at: new Date().toISOString() }
+    // headless/CLI 不一定触发 agent/disposed，陈旧会话记录需按容量裁剪
+    const ids = Object.keys(cfg.hidden)
+    if (ids.length > MAX_HIDDEN_SESSIONS) {
+      ids
+        .sort((a, b) => (cfg.hidden[a].at < cfg.hidden[b].at ? -1 : 1))
+        .slice(0, ids.length - MAX_HIDDEN_SESSIONS)
+        .forEach((id) => delete cfg.hidden[id])
+    }
+  }
+
+  // 载荷级目录过滤（**best-effort**）：必须早于 installDebugMode 注册，使其成为最外层监听者。
+  //
+  // 兜底原因：shadow 落在全局层，而 web 场景的技能可能注册在更近的 agent 作用域层、
+  // 或以 runtime 条目先于本插件注册（first-wins），都会让全局 shadow 失效。
+  // ⚠️ 实测 `options` 是**深度不可变的**（options 不可写 / messages 被密封 / 文本块被冻结），
+  // 故本过滤**当前无法生效**（filterSkillCatalog 会返回 0）。保留它是因为：
+  // 一旦框架放宽不可变性，此路径即可立即兜底；且失败时零副作用、不影响会话。
+  ctx.on('llm/stream', async function* (options: unknown, next: () => AsyncIterable<unknown>) {
+    const src = (options ?? {}) as { sessionId?: unknown; messages?: unknown }
+    const sid = typeof src.sessionId === 'string' ? src.sessionId : undefined
+    const state = sid ? sessions.get(sid) : undefined
+    const hidden = state
+      ? [...state.disposers.keys()]
+      : sid
+        ? (store.get().hidden?.[sid]?.skills ?? [])
+        : []
+    if (hidden.length > 0) filterSkillCatalog(options, hidden)
+    yield* next()
+  })
 
   // 调试模式：拦截真实 LLM 调用，将请求参数写入 storageDomain（默认开启）
   installDebugMode(ctx, store)
@@ -122,14 +171,36 @@ export function apply(ctx: Context): void {
     scope: agent,
   })
 
-  /** 会话发起：注册 shadow + 写基线 skills（幂等） */
-  const initSession = async (agent: Agent): Promise<void> => {
+  /**
+   * 会话发起：注册 shadow + 写基线 skills（幂等，且防并发重复初始化）
+   *
+   * @param firstText 首轮用户文本（可选）。`agent.session.events` 在 session-start 时通常
+   *   尚无首条用户消息，据此判定会把本应可见的技能误隐藏；故由 pre-step 调用方把首轮真实
+   *   用户文本传入，一次性判定正确。
+   */
+  const initSession = async (agent: Agent, firstText?: string): Promise<void> => {
+    const sid = agent.session.id
+    if (sessions.has(sid)) return
+    const pending = initializing.get(sid)
+    if (pending) return pending // 防并发：重复初始化会拿到 no-op disposer
+    const task = (async (): Promise<void> => {
+      await initSessionOnce(agent, firstText)
+    })()
+      .finally(() => {
+        initializing.delete(sid)
+      })
+    initializing.set(sid, task)
+    return task
+  }
+
+  /** initSession 的实际实现（由防并发包装调用，不应直接调用） */
+  const initSessionOnce = async (agent: Agent, firstText?: string): Promise<void> => {
     const sid = agent.session.id
     if (sessions.has(sid)) return
     const cfg = store.get()
     // 先列出当前会话已注册的全部技能（用于把"关键字规则前缀族"默认纳入禁用集）
     const all = await ctx.skills.list(lookupFor(agent))
-    const text = userTextFromEvents(agent.session.events)
+    const text = firstText ?? userTextFromEvents(agent.session.events)
     const { prefixes, keywords } = matchKeywordRules(text, cfg.rules.keywordRules)
     // 有效禁用集 = disabledSkills ∪（命中规则前缀的全部已注册技能），再去掉关键字命中的前缀。
     // 由此 lark-* 等前缀族默认隐藏，仅当用户消息含 飞书/feishu/lark 时才经 reconcile 加回。
@@ -145,6 +216,8 @@ export function apply(ctx: Context): void {
     // 对"个人禁用清单"语义正确（持久配置跨会话于 session-start 重注册即可）；
     // 顺序单用户使用下关键字自动加载亦正确。并发多会话共享全局影子为已知边界。
     const disposers = await applyShadows(ctx, effective, lookupFor(agent))
+    // 按 sessionId 登记"当前隐藏了哪些技能"，供后续命中关键字时精确恢复
+    recordHidden(sid, [...disposers.keys()])
 
     // 基线 skills：非禁用 → add；禁用 → remove 流水（反映"已从上下文移除"）
     for (const s of all) {
@@ -161,16 +234,23 @@ export function apply(ctx: Context): void {
       matchedKeywords: keywords,
       used: new Set(),
     })
-    flush(file, cfg)
+    store.flush()
   }
 
-  /** 每轮：观测 usage + 运行时关键字豁免 + 落盘 */
-  const stepSession = async (agent: Agent, messages: AgentMessage[]): Promise<void> => {
+  /**
+   * 每轮 next() **之前**执行：确保初始化 + 关键字命中后撤销对应 shadow。
+   *
+   * 必须在 next() 之前：技能目录（`<system-reminder><available_skills>`，位于 messages 内）
+   * 由框架在 next() 内部生成；若等到 next() 之后才注册/撤销 shadow，本轮目录已经定稿，
+   * 禁用技能仍会出现在上下文里（首轮尤其明显）。
+   */
+  const reconcileForTurn = async (agent: Agent, messages: AgentMessage[]): Promise<void> => {
     const sid = agent.session.id
     let state = sessions.get(sid)
     if (!state) {
-      // 兜底：若 session-start 未被等待，首轮 pre-step 内完成初始化
-      await initSession(agent)
+      // 兜底：若 session-start 未被等待，首轮 pre-step 内完成初始化。
+      // 传入本轮用户文本，使首轮即可一次性判定正确（避免注册后再 dispose 的不可逆churn）。
+      await initSession(agent, userTextFromMessages(messages))
       state = sessions.get(sid)
       if (!state) return
     }
@@ -179,31 +259,40 @@ export function apply(ctx: Context): void {
     const { prefixes, keywords } = matchKeywordRules(text, cfg.rules.keywordRules)
 
     // 先算出"本轮回新命中的前缀"（在并入 state.matchedPrefixes 之前判断），
-    // 否则会被上面的 for 循环并入后使 `prefixes.size > state.matchedPrefixes.size` 恒为 false。
+    // 否则会被下面的 for 循环并入后使 `prefixes.size > state.matchedPrefixes.size` 恒为 false。
     const newPrefixes = [...prefixes].filter((p) => !state.matchedPrefixes.has(p))
     for (const p of prefixes) state.matchedPrefixes.add(p)
     for (const k of keywords) state.matchedKeywords.add(k)
 
-    let changed = false
     // 运行时新命中关键字前缀 → 重新计算有效禁用集、撤销对应 shadow，并将前缀技能增量加回 skills
-    if (newPrefixes.length > 0) {
-      const all = await ctx.skills.list(lookupFor(agent))
-      const effective = computeEffectiveDisabled(
-        cfg.rules.disabledSkills,
-        cfg.rules.keywordRules,
-        state.matchedPrefixes,
-        all.map((s) => s.name),
-      )
-      await reconcileShadows(ctx, state.disposers, effective, lookupFor(agent))
-      for (const s of all) {
-        const rule = cfg.rules.keywordRules.find((r) => s.name.startsWith(r.skillPrefix))
-        if (rule && state.matchedPrefixes.has(rule.skillPrefix)) {
-          const kw = keywordFor(s.name, cfg.rules.keywordRules, state.matchedPrefixes, state.matchedKeywords)
-          upsertSkill(cfg, { name: s.name, keyword: kw, overview: s.description }, 'add')
-        }
+    if (newPrefixes.length === 0) return
+
+    const all = await ctx.skills.list(lookupFor(agent))
+    const effective = computeEffectiveDisabled(
+      cfg.rules.disabledSkills,
+      cfg.rules.keywordRules,
+      state.matchedPrefixes,
+      all.map((s) => s.name),
+    )
+    await reconcileShadows(ctx, state.disposers, effective, lookupFor(agent))
+    // reconcile 撤销了命中前缀的 shadow → 同步更新"仍被隐藏"的清单（供下一轮恢复）
+    recordHidden(sid, [...state.disposers.keys()])
+    for (const s of all) {
+      const rule = cfg.rules.keywordRules.find((r) => s.name.startsWith(r.skillPrefix))
+      if (rule && state.matchedPrefixes.has(rule.skillPrefix)) {
+        const kw = keywordFor(s.name, cfg.rules.keywordRules, state.matchedPrefixes, state.matchedKeywords)
+        upsertSkill(cfg, { name: s.name, keyword: kw, overview: s.description }, 'add')
       }
-      changed = true
     }
+    store.flush()
+  }
+
+  /** 每轮 next() 之后：观测实际调用并落盘 */
+  const stepSession = async (agent: Agent, messages: AgentMessage[]): Promise<void> => {
+    const state = sessions.get(agent.session.id)
+    if (!state) return
+    const cfg = store.get()
+    let changed = false
 
     // 观测实际调用：tool/call(name=skill) 或 skill-invocation
     for (const ev of agent.session.events) {
@@ -215,10 +304,10 @@ export function apply(ctx: Context): void {
       }
     }
 
-    if (changed) flush(file, cfg)
+    if (changed) store.flush()
   }
 
-  /** 会话销毁：撤销 shadow + 落盘 */
+  /** 会话销毁：撤销 shadow + 清理该会话的隐藏登记 + 落盘 */
   const cleanupSession = (agent?: { session?: { id?: string } }): void => {
     const sid = agent?.session?.id
     if (!sid) return
@@ -226,14 +315,28 @@ export function apply(ctx: Context): void {
     if (!state) return
     for (const d of state.disposers.values()) d()
     sessions.delete(sid)
-    flush(file, store.get())
+    initializing.delete(sid)
+    recordHidden(sid, [])
+    store.flush()
   }
 
-  ctx.on('agent/session-start', (payload: SessionStartPayload) => {
-    void initSession(payload.agent)
-  })
+  // 注意：**不在** session-start 初始化。此时 `agent.session.events` 通常尚无首条用户消息，
+  // 据此判定会把本应可见的技能先隐藏；而实测 dispose 无法将其恢复到框架目录，
+  // 造成"关键字命中也加载不回来"。故统一推迟到 pre-step（此时 messages 已含真实用户文本），
+  // 在 next() 之前一次性判定正确。session-start 仅保留事件以便未来扩展。
+  void (null as unknown as SessionStartPayload)
 
   ctx.on('agent/pre-step', async (payload: PreStepPayload, next: NextFn) => {
+    // 关键顺序：技能目录（<system-reminder><available_skills>，位于 messages 中）是在
+    // next() 内部生成的。若在 next() 之后才注册 shadow，首轮目录就已定稿，禁用技能仍会
+    // 出现在上下文中（实测首轮 messages 含全部 lark-* 45 处）。故先完成初始化/协调，
+    // 再交回框架构建本轮。
+    const sid = payload.agent?.session?.id
+    if (sid && !sessions.has(sid)) {
+      await initSession(payload.agent)
+    }
+    // 本轮新命中关键字 → 撤销对应 shadow，使技能在**本轮**目录即可见
+    await reconcileForTurn(payload.agent, payload.messages)
     const decision = await next()
     if (decision && decision.kind === 'reject') return decision
     await stepSession(payload.agent, payload.messages)

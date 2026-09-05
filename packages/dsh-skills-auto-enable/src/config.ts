@@ -51,6 +51,19 @@ export interface UsageRecord {
   lastUsedAt: string
 }
 
+/**
+ * 按 sessionId 记录"当前被 shadow 隐藏的技能名"，用于后续命中关键字后精确恢复。
+ *
+ * 真正的撤销句柄（disposer）是函数、无法序列化，故落盘只记**技能名清单**（审计 / 跨轮次追踪），
+ * 实际恢复依赖进程内存中的 disposers（见 index.ts 的 sessions）。
+ * 必须登记的原因：框架 `register` 对同名词条是 **first-wins**——重复注册会被忽略并返回
+ * **no-op disposer**（撤销不了第一次的注册）。登记后可避免重复注册，保证 disposer 始终有效。
+ */
+export interface HiddenRecord {
+  skills: string[]
+  at: string
+}
+
 /** 调试模式配置：默认开启，在真实 LLM 接口调用前拦截，将请求参数写入 storageDomain（落盘临时文件） */
 export interface DebugConfig {
   /** 是否启用调试拦截；默认 true */
@@ -72,6 +85,8 @@ export interface AutoEnableConfig {
   skills: SkillRecord[]
   skillsLog: SkillLogEntry[]
   usage: Record<string, UsageRecord>
+  /** sessionId → 当前被 shadow 隐藏的技能名清单（用于命中关键字后恢复） */
+  hidden: Record<string, HiddenRecord>
   debug: DebugConfig
 }
 
@@ -87,6 +102,7 @@ export function defaultConfig(): AutoEnableConfig {
     skills: [],
     skillsLog: [],
     usage: {},
+    hidden: {},
     debug: {
       enabled: true,
       domain: 'dsh-llm-debug',
@@ -102,6 +118,15 @@ export function defaultConfig(): AutoEnableConfig {
  */
 export class ConfigStore {
   private current: AutoEnableConfig = defaultConfig()
+  /**
+   * 最近一次由本插件写出的文件内容。
+   *
+   * 本插件 **监听自己写的配置文件**：每次 flush 都会触发 fs.watch → reload() → 把
+   * `current` 换成刚从磁盘解析出的新对象，从而**丢弃本轮正在进行的内存变更**
+   * （表现为 hidden/审计字段改了却没落盘）。故记录自己写出的内容，watch 回调中
+   * 若发现文件内容与本插件上次写出的一致，即判定为"自己的写入"并跳过 reload。
+   */
+  private lastWritten: string | undefined
 
   constructor(private readonly file: string) {
     this.reload()
@@ -134,6 +159,7 @@ export class ConfigStore {
         skills: parsed.skills ?? [],
         skillsLog: parsed.skillsLog ?? [],
         usage: parsed.usage ?? {},
+        hidden: parsed.hidden ?? {},
         debug: { ...defaultConfig().debug, ...parsed.debug },
       }
     } catch {
@@ -149,21 +175,29 @@ export class ConfigStore {
    * 场景会话结束后进程无法退出（实测挂住直到被 timeout 杀掉）；而挂住的进程又会持续
    * 占用配置文件所在目录的句柄，使下一次 `flush` 的 rename 覆写报 Windows EPERM。
    * unref 后仍会在进程存活期间正常触发热重载（web 长驻进程不受影响）。
+   *
+   * 另：文件内容若与本插件上次写出的一致，判定为"自己的写入"并跳过 reload
+   * （详见 lastWritten 注释）。
    */
   watch(onChange: () => void): void {
     const dir = dirname(this.file)
     const name = basename(this.file)
     const watcher = watch(dir, (_event, filename) => {
-      if (filename === name) {
-        this.reload()
-        onChange()
+      if (filename !== name) return
+      try {
+        if (readFileSync(this.file, 'utf-8') === this.lastWritten) return
+      } catch {
+        // 读取失败按外部变更处理
       }
+      this.reload()
+      onChange()
     })
     watcher.unref()
   }
 
   /** 同步原子写盘（委托 records.flush：先写临时文件再 rename），避免半写文件 */
   flush(): void {
+    this.lastWritten = JSON.stringify(this.current, null, 2)
     atomicFlush(this.file, this.current)
   }
 }
