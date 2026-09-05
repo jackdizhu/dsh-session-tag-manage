@@ -18,15 +18,14 @@ import { dirname, basename } from 'node:path'
 import { flush as atomicFlush } from './records.js'
 
 /**
- * 调试模式配置：全局开关，默认开启（与旧版 dsh-skills-auto-enable 一致：装上即
- * 对全部会话拦截真实 LLM 调用）。经 `/debugger [on|off|status]` 指令或 headless
- * 兜底改写本字段并落盘，fs.watch 自跳 reload（lastWritten 相同）后同进程即时生效、
- * 跨重启保持。
+ * 调试模式配置：全局开关，默认关闭（装上不拦截真实 LLM 调用，需 `/debugger on`
+ * 显式开启）。经 `/debugger [on|off|status]` 指令或 headless 兜底改写本字段并落盘，
+ * fs.watch 自跳 reload（lastWritten 相同）后同进程即时生效、跨重启保持。
  */
 export interface DebugConfig {
   /**
    * 是否启用调试拦截（全局）。
-   * 默认 true（装上即拦截，对齐旧版行为）；置 false 后全部会话透传真实 LLM。
+   * 默认 false（装上不拦截，需 /debugger on 开启）；置 true 后全部会话拦截 LLM。
    */
   enabled: boolean
   /** storageDomain 领域名（经 json 后端持久化到 ~/.dsh/storages/<domain>.json） */
@@ -49,7 +48,7 @@ export function defaultConfig(): DebuggerConfig {
   return {
     version: 1,
     debug: {
-      enabled: true,
+      enabled: false,
       domain: 'dsh-llm-debug',
       reply: '[DEBUG] LLM call blocked; request params recorded to a temp file.',
     },

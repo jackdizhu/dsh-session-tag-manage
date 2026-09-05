@@ -7,8 +7,8 @@
  *
  * **开关模型（2026-09-05 重构）**：**全局开关**，非会话级。指令 on/off/status
  * 直接读写 `config.debug.enabled`（唯一写入口 `ConfigStore.setDebugEnabled`：
- * 更新内存 current → flush 落盘 → 跨重启保持），拦截判定只依赖该全局布尔，
- * 与旧版 dsh-skills-auto-enable 行为完全一致（默认开启：装上即全局拦截）。
+ * 更新内存 current → flush 落盘 → 跨重启保持），拦截判定只依赖该全局布尔。
+ * 默认关闭（装上不拦截，需 `/debugger on` 显式开启）。
  *
  * **可见性（方案C 保留）**：宿主把 handler 结果持久化为 flow 节点，但部分运行时
  * 客户端不渲染该节点 → 指令执行在 Web 前端可能"无响应"。故 handler 在更新开关后
