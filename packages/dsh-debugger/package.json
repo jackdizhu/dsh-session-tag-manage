@@ -1,5 +1,5 @@
 {
-  "name": "dsh-session-base-host",
+  "name": "dsh-debugger",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
