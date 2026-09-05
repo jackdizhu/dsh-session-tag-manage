@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
 
-import { DebuggerState } from '../src/debug-state.js'
 import {
   parseDebuggerInput,
   executeDebuggerCommand,
@@ -18,9 +17,19 @@ function makeInvocation(rawInput: string, sessionId = 's1') {
   }
 }
 
-/** 构造最小 ConfigStore 桩 */
-function makeStore(debugEnabled = false) {
-  return { get: () => ({ debug: { enabled: debugEnabled, domain: 'd', reply: 'r' } }) } as never
+/**
+ * 构造最小 ConfigStore 桩（全局开关模型）：get 读 / setDebugEnabled 写同一全局布尔。
+ */
+function makeStore(debugEnabled = true) {
+  let enabled = debugEnabled
+  const store = {
+    get: () => ({ debug: { enabled, domain: 'd', reply: 'r' } }),
+    setDebugEnabled: (v: boolean) => {
+      enabled = v
+    },
+    isEnabled: () => enabled,
+  }
+  return store
 }
 
 describe('parseDebuggerInput', () => {
@@ -29,10 +38,13 @@ describe('parseDebuggerInput', () => {
     expect(parseDebuggerInput('   ')).toEqual({ action: 'on' })
   })
 
-  it('on | off | status 大小写不敏感', () => {
+  it('on | off | status 大小写不敏感，支持中文别名', () => {
     expect(parseDebuggerInput('on')).toEqual({ action: 'on' })
     expect(parseDebuggerInput(' OFF ')).toEqual({ action: 'off' })
     expect(parseDebuggerInput('Status')).toEqual({ action: 'status' })
+    expect(parseDebuggerInput('开启')).toEqual({ action: 'on' })
+    expect(parseDebuggerInput('关闭')).toEqual({ action: 'off' })
+    expect(parseDebuggerInput('当前状态')).toEqual({ action: 'status' })
   })
 
   it('未知参数判为用法错误', () => {
@@ -41,80 +53,68 @@ describe('parseDebuggerInput', () => {
   })
 })
 
-describe('DebuggerState（会话级状态机）', () => {
-  it('默认全部关闭', () => {
-    const state = new DebuggerState()
-    expect(state.isEnabled('s1')).toBe(false)
-    expect(state.isEnabled(undefined)).toBe(false)
-  })
-
-  it('enable/disable/drop 按会话隔离', () => {
-    const state = new DebuggerState()
-    state.enable('s1')
-    state.enable('s2')
-    expect(state.isEnabled('s1')).toBe(true)
-    state.disable('s1')
-    expect(state.isEnabled('s1')).toBe(false)
-    expect(state.isEnabled('s2')).toBe(true)
-    state.drop('s2')
-    expect(state.isEnabled('s2')).toBe(false)
-  })
-})
-
-describe('executeDebuggerCommand', () => {
-  it('无参 = 开启：置位状态并返回确认文本', () => {
-    const state = new DebuggerState()
-    const result = executeDebuggerCommand(makeInvocation(''), state, makeStore())
+describe('executeDebuggerCommand（全局开关）', () => {
+  it('无参 = 开启：置全局 enabled 并返回确认文本', () => {
+    const store = makeStore(false)
+    const result = executeDebuggerCommand(makeInvocation(''), store as never)
     expect(result.kind).toBe('success')
-    expect(state.isEnabled('s1')).toBe(true)
-    expect((result as { text?: string }).text).toContain('enabled for session s1')
+    expect(store.isEnabled()).toBe(true) // 全局已开
+    expect((result as { text?: string }).text).toContain('已全局开启')
   })
 
-  it('off：复位状态并返回确认文本', () => {
-    const state = new DebuggerState()
-    state.enable('s1')
-    const result = executeDebuggerCommand(makeInvocation('off'), state, makeStore())
+  it('on：同无参，置全局 enabled=true', () => {
+    const store = makeStore(false)
+    executeDebuggerCommand(makeInvocation('on'), store as never)
+    expect(store.isEnabled()).toBe(true)
+  })
+
+  it('off：置全局 enabled=false', () => {
+    const store = makeStore(true)
+    const result = executeDebuggerCommand(makeInvocation('off'), store as never)
     expect(result.kind).toBe('success')
-    expect(state.isEnabled('s1')).toBe(false)
+    expect(store.isEnabled()).toBe(false)
+    expect((result as { text?: string }).text).toContain('已全局关闭')
   })
 
-  it('status：会话级关闭且配置兜底关闭 → OFF', () => {
-    const state = new DebuggerState()
-    const result = executeDebuggerCommand(makeInvocation('status'), state, makeStore(false))
-    expect((result as { text?: string }).text).toContain('OFF')
+  it('status：全局关闭 → 返回"关闭"', () => {
+    const store = makeStore(false)
+    const result = executeDebuggerCommand(makeInvocation('status'), store as never)
+    expect((result as { text?: string }).text).toContain('关闭')
   })
 
-  it('status：配置兜底开启时显示 ON（同口径于拦截判定）', () => {
-    const state = new DebuggerState()
-    const result = executeDebuggerCommand(makeInvocation('status'), state, makeStore(true))
-    expect((result as { text?: string }).text).toContain('ON')
+  it('status：全局开启 → 返回"开启"（同口径于拦截判定）', () => {
+    const store = makeStore(true)
+    const result = executeDebuggerCommand(makeInvocation('status'), store as never)
+    expect((result as { text?: string }).text).toContain('开启')
   })
 
-  it('未知参数返回 error 与用法提示，不改变状态', () => {
-    const state = new DebuggerState()
-    const result = executeDebuggerCommand(makeInvocation('nonsense'), state, makeStore())
+  it('未知参数返回 error 与用法提示，不改变开关', () => {
+    const store = makeStore(true)
+    const result = executeDebuggerCommand(makeInvocation('nonsense'), store as never)
     expect(result.kind).toBe('error')
-    expect(state.isEnabled('s1')).toBe(false)
+    expect((result as { text?: string }).text).toContain('Usage: /debugger')
+    expect(store.isEnabled()).toBe(true)
   })
 
-  it('缺少会话上下文返回 error', () => {
-    const state = new DebuggerState()
+  it('无会话上下文仍可执行全局开关（仅跳过气泡追加）', () => {
+    const store = makeStore(false)
     const invocation = makeInvocation('on')
     ;(invocation.agent as unknown as { session: unknown }).session = undefined
-    const result = executeDebuggerCommand(invocation, state, makeStore())
-    expect(result.kind).toBe('error')
+    const result = executeDebuggerCommand(invocation, store as never)
+    expect(result.kind).toBe('success')
+    expect(store.isEnabled()).toBe(true)
   })
 })
 
 describe('installDebuggerCommand', () => {
-  it('以 name=debugger 注册，handler 正确分派', () => {
+  it('以 name=debugger 注册，handler 正确分派到全局开关', () => {
     const registered: Array<Record<string, unknown>> = []
     const ctx = {
       commands: { register: (cmd: Record<string, unknown>) => { registered.push(cmd); return () => {} } },
       logger: { warn: vi.fn() },
     }
-    const state = new DebuggerState()
-    installDebuggerCommand(ctx as never, state, makeStore())
+    const store = makeStore(false)
+    installDebuggerCommand(ctx as never, store as never)
     expect(registered).toHaveLength(1)
     expect(registered[0].name).toBe('debugger')
     expect(registered[0].input).toEqual({ hint: '[on|off|status]' })
@@ -122,7 +122,7 @@ describe('installDebuggerCommand', () => {
       makeInvocation('on') as never,
     )
     expect(result.kind).toBe('success')
-    expect(state.isEnabled('s1')).toBe(true)
+    expect(store.isEnabled()).toBe(true) // 全局 enabled 被置位
   })
 
   it('注册失败（如重名）仅告警不抛出', () => {
@@ -131,7 +131,7 @@ describe('installDebuggerCommand', () => {
       commands: { register: () => { throw new Error('duplicate') } },
       logger: { warn },
     }
-    expect(() => installDebuggerCommand(ctx as never, new DebuggerState(), makeStore())).not.toThrow()
+    expect(() => installDebuggerCommand(ctx as never, makeStore() as never)).not.toThrow()
     expect(warn).toHaveBeenCalledOnce()
   })
 })
@@ -148,9 +148,10 @@ describe('debuggerFallbackAction（headless pre-step 兜底判定）', () => {
     expect(debuggerFallbackAction([userMsg('/DEBUGGER ON')])).toBe('on')
   })
 
-  it('/debugger off / status 正确解析', () => {
+  it('/debugger off / status 正确解析（含中文别名）', () => {
     expect(debuggerFallbackAction([userMsg('/debugger off')])).toBe('off')
     expect(debuggerFallbackAction([userMsg('/debugger status')])).toBe('status')
+    expect(debuggerFallbackAction([userMsg('/debugger 关闭')])).toBe('off')
   })
 
   it('含前后空白仍可命中；前后缀文字不命中（防误判普通提问）', () => {

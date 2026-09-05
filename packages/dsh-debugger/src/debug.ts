@@ -21,8 +21,7 @@ import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { AutoEnableConfig, ConfigStore, DebugConfig } from './config.js'
-import type { DebuggerState } from './debug-state.js'
+import type { DebuggerConfig, ConfigStore, DebugConfig } from './config.js'
 
 /** 单条被拦截请求的参数记录 */
 interface LlmDebugRequest {
@@ -83,10 +82,9 @@ async function* debugStream(text: string): AsyncIterable<unknown> {
  * 安装调试模式拦截。
  *
  * @param ctx - 插件上下文（须 inject `llm` 与 `storage`）
- * @param store - 配置存储（读取 debug.enabled / reply）
- * @param state - 会话级开关状态机（/debugger 指令与 headless 兜底写入）
+ * @param store - 配置存储（读取 debug.enabled / reply / domain）
  */
-export function installDebugMode(ctx: Context, store: ConfigStore, state: DebuggerState): void {
+export function installDebugMode(ctx: Context, store: ConfigStore): void {
   let unitPromise: Promise<unknown> | undefined
   let useFallback = false
 
@@ -136,13 +134,13 @@ export function installDebugMode(ctx: Context, store: ConfigStore, state: Debugg
   }
 
   ctx.on('llm/stream', async function* (options: unknown, next: () => AsyncIterable<unknown>) {
-    const cfg: AutoEnableConfig = store.get()
+    const cfg: DebuggerConfig = store.get()
     const debug: DebugConfig = cfg.debug
     const src = (options ?? {}) as Record<string, unknown>
-    const sessionId = typeof src.sessionId === 'string' ? src.sessionId : undefined
-    // 拦截判定 = 会话级指令开关（/debugger on）∪ 配置文件手工兜底（debug.enabled）。
-    // 默认两者皆关：不拦截、不落盘，行为等同未装插件。
-    if (!state.isEnabled(sessionId) && !debug.enabled) {
+    // 全局开关：默认开启（对齐旧版 dsh-skills-auto-enable）——每轮真实模型调用前拦截，
+    // 不真正调用 LLM，把请求参数落盘并合成同构回复。仅当 debug.enabled=false（经
+    // /debugger off 或手工改配置）时透传真实适配器，行为等同不装此插件。
+    if (!debug.enabled) {
       // 调试关闭：透传真实适配器，行为等同不装此插件
       yield* next()
       return

@@ -1,50 +1,15 @@
 /**
- * SKILL 增量记录（宿主端插件 dsh-debugger）
+ * 配置落盘（宿主端插件 dsh-debugger）
  *
- * 维护两类数据：
- * - skills：当前会话上下文中存在的全部 SKILL 完整清单（name/keyword/overview）
- * - skillsLog：增量变更审计流水（op: add/remove）
- * - usage：执行过程中实际被调用的 SKILL（count / lastUsedAt）
- *
- * 落盘采用"先写临时文件再 fs.rename 原子替换"，避免多会话并发写损坏文件。
+ * 采用"先写临时文件再 fs.rename 原子替换"，避免多会话并发写损坏文件。
+ * 旧版 dsh-skills-auto-enable 的 upsertSkill / recordUsage 增量记录已随技能
+ * 可见性子系统一并移除。
  *
  * @module dsh-debugger/records
  */
 
 import { writeFileSync, renameSync, copyFileSync, rmSync } from 'node:fs'
-import type { AutoEnableConfig, SkillRecord, UsageRecord } from './config.js'
-
-/** skillsLog 上限：超出后裁剪最早的审计条目，避免流水无界增长导致配置文件膨胀 */
-const MAX_LOG = 500
-
-/**
- * 增量维护 skills 清单并追加 skillsLog 流水。
- * - op='add'：清单中无同名则追���
- * - op='remove'：清单中有同名则移除
- * 每次调用都追加一条 skillsLog（审计差异）；流水超过 MAX_LOG 时裁剪最早条目。
- */
-export function upsertSkill(cfg: AutoEnableConfig, rec: SkillRecord, op: 'add' | 'remove'): void {
-  const idx = cfg.skills.findIndex((s) => s.name === rec.name)
-  if (op === 'add' && idx < 0) cfg.skills.push({ ...rec })
-  if (op === 'remove' && idx >= 0) cfg.skills.splice(idx, 1)
-  cfg.skillsLog.push({
-    at: new Date().toISOString(),
-    op,
-    name: rec.name,
-    keyword: rec.keyword,
-    overview: rec.overview,
-  })
-  if (cfg.skillsLog.length > MAX_LOG) {
-    cfg.skillsLog.splice(0, cfg.skillsLog.length - MAX_LOG)
-  }
-}
-
-/** 观测到技能被调用 → usage 累加（count+1，lastUsedAt 更新） */
-export function recordUsage(cfg: AutoEnableConfig, name: string): void {
-  const now = new Date().toISOString()
-  const prev: UsageRecord = cfg.usage[name] ?? { count: 0, lastUsedAt: now }
-  cfg.usage[name] = { count: prev.count + 1, lastUsedAt: now }
-}
+import type { DebuggerConfig } from './config.js'
 
 /**
  * 落盘：优先原子写（先写 `<file>.tmp` 再 rename 替换，落盘期间不出现半写文件）。
@@ -54,11 +19,11 @@ export function recordUsage(cfg: AutoEnableConfig, name: string): void {
  * 逐级降级：rename → copyFileSync（原地覆盖内容，保留文件条目与既有 watcher，
  * 规避句柄占用）→ 直写目标文件。
  *
- * **本函数保证不抛异常**：配置落盘失败只影响审计记录，不应阻断会话或插件加载。
+ * **本函数保证不抛异常**：配置落盘失败只影响配置持久化，不应阻断会话或插件加载。
  *
  * @returns 是否成功写入（至少一种路径成功）
  */
-export function flush(file: string, cfg: AutoEnableConfig): boolean {
+export function flush(file: string, cfg: DebuggerConfig): boolean {
   let data: string
   try {
     data = JSON.stringify(cfg, null, 2)

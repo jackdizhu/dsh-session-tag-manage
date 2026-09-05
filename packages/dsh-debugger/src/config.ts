@@ -1,13 +1,14 @@
 /**
  * 配置类型与加载（宿主端插件 dsh-debugger）
  *
- * 配置文件 dsh-debugger-config.json 置于本包根目录：
- * - rules：静态配置（禁用列表 / 关键字规则 / 自动裁剪阈值）
- * - skills：会话中存在的全部 SKILL 完整清单（每条仅 name/keyword/overview）
- * - skillsLog：增量变更审计流水（op: add/remove）
- * - usage：执行过程中实际被调用的 SKILL（count / lastUsedAt）
+ * 配置文件 dsh-debugger-config.json 置于本包根目录，仅保留与本插件相关的两项：
+ * - version：配置结构版本（当前恒为 1）
+ * - debug：调试模式配置（enabled 全局开关 / domain 存储领域 / reply 合成回复）
  *
- * 通过 fs.watch 热更新：文件变更后下一轮 agent/pre-step 重新计算有效禁用集。
+ * 旧版 dsh-skills-auto-enable 遗留的 rules/skills/skillsLog/usage/hidden 字段
+ * 已全部移除，不再写入配置文件。
+ *
+ * 通过 fs.watch 热更新：文件变更后 /debugger 指令与 headless 兜底读取最新开关状态。
  *
  * @module dsh-debugger/config
  */
@@ -16,60 +17,16 @@ import { readFileSync, watch, existsSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
 import { flush as atomicFlush } from './records.js'
 
-/** 关键字 → 前缀自动加载规则 */
-export interface KeywordRule {
-  keywords: string[]
-  skillPrefix: string
-}
-
-/** 反馈规则（可选，用于"判断是否移除上下文 SKILL 以省 token"） */
-export interface AutoTrim {
-  enabled: boolean
-  unusedTurnsThreshold: number
-  keepKeywordMatched: boolean
-}
-
-/** skills 清单条目：仅三字段 */
-export interface SkillRecord {
-  name: string
-  keyword: string
-  overview: string
-}
-
-/** skillsLog 增量流水条目 */
-export interface SkillLogEntry {
-  at: string
-  op: 'add' | 'remove'
-  name: string
-  keyword: string
-  overview: string
-}
-
-/** usage 记录 */
-export interface UsageRecord {
-  count: number
-  lastUsedAt: string
-}
-
 /**
- * 按 sessionId 记录"当前被 shadow 隐藏的技能名"，用于后续命中关键字后精确恢复。
- *
- * 真正的撤销句柄（disposer）是函数、无法序列化，故落盘只记**技能名清单**（审计 / 跨轮次追踪），
- * 实际恢复依赖进程内存中的 disposers（见 index.ts 的 sessions）。
- * 必须登记的原因：框架 `register` 对同名词条是 **first-wins**——重复注册会被忽略并返回
- * **no-op disposer**（撤销不了第一次的注册）。登记后可避免重复注册，保证 disposer 始终有效。
+ * 调试模式配置：全局开关，默认开启（与旧版 dsh-skills-auto-enable 一致：装上即
+ * 对全部会话拦截真实 LLM 调用）。经 `/debugger [on|off|status]` 指令或 headless
+ * 兜底改写本字段并落盘，fs.watch 自跳 reload（lastWritten 相同）后同进程即时生效、
+ * 跨重启保持。
  */
-export interface HiddenRecord {
-  skills: string[]
-  at: string
-}
-
-/** 调试模式配置：默认关闭；经 `/debugger` 指令按会话开启（会话级），或手工置 true 作为全局兜底 */
 export interface DebugConfig {
   /**
-   * 是否启用调试拦截。
-   * 默认 false（调试默认关闭）；运行时由 `/debugger` 指令按会话控制（内存态），
-   * 本字段置 true 时对全部会话强制生效（拦截判定 = 会话级开关 ∪ 本字段）。
+   * 是否启用调试拦截（全局）。
+   * 默认 true（装上即拦截，对齐旧版行为）；置 false 后全部会话透传真实 LLM。
    */
   enabled: boolean
   /** storageDomain 领域名（经 json 后端持久化到 ~/.dsh/storages/<domain>.json） */
@@ -78,37 +35,21 @@ export interface DebugConfig {
   reply: string
 }
 
-/** 完整配置结构 */
-export interface AutoEnableConfig {
+/** 完整配置结构（仅本插件相关的两项） */
+export interface DebuggerConfig {
   version: 1
-  rules: {
-    disabledSkills: string[]
-    keywordRules: KeywordRule[]
-    autoTrim: AutoTrim
-  }
-  skills: SkillRecord[]
-  skillsLog: SkillLogEntry[]
-  usage: Record<string, UsageRecord>
-  /** sessionId → 当前被 shadow 隐藏的技能名清单（用于命中关键字后恢复） */
-  hidden: Record<string, HiddenRecord>
   debug: DebugConfig
 }
 
+/** 兼容别名：历史代码 / 测试中的旧类型名 */
+export type AutoEnableConfig = DebuggerConfig
+
 /** 默认配置（首次运行 / 文件损坏时回退） */
-export function defaultConfig(): AutoEnableConfig {
+export function defaultConfig(): DebuggerConfig {
   return {
     version: 1,
-    rules: {
-      disabledSkills: [],
-      keywordRules: [],
-      autoTrim: { enabled: false, unusedTurnsThreshold: 20, keepKeywordMatched: true },
-    },
-    skills: [],
-    skillsLog: [],
-    usage: {},
-    hidden: {},
     debug: {
-      enabled: false,
+      enabled: true,
       domain: 'dsh-llm-debug',
       reply: '[DEBUG] LLM call blocked; request params recorded to a temp file.',
     },
@@ -121,13 +62,13 @@ export function defaultConfig(): AutoEnableConfig {
  * 读取失败（JSON 损坏 / 缺字段）回退默认结构并继续，不阻断会话。
  */
 export class ConfigStore {
-  private current: AutoEnableConfig = defaultConfig()
+  private current: DebuggerConfig = defaultConfig()
   /**
    * 最近一次由本插件写出的文件内容。
    *
    * 本插件 **监听自己写的配置文件**：每次 flush 都会触发 fs.watch → reload() → 把
    * `current` 换成刚从磁盘解析出的新对象，从而**丢弃本轮正在进行的内存变更**
-   * （表现为 hidden/审计字段改了却没落盘）。故记录自己写出的内容，watch 回调中
+   * （表现为 debug.enabled 改了却没落盘）。故记录自己写出的内容，watch 回调中
    * 若发现文件内容与本插件上次写出的一致，即判定为"自己的写入"并跳过 reload。
    */
   private lastWritten: string | undefined
@@ -143,8 +84,8 @@ export class ConfigStore {
     return this.file
   }
 
-  /** 当前配置（只读引用，调用方不应直接修改数组引用） */
-  get(): AutoEnableConfig {
+  /** 当前配置（只读引用，调用方不应直接修改引用内容） */
+  get(): DebuggerConfig {
     return this.current
   }
 
@@ -155,15 +96,9 @@ export class ConfigStore {
       return
     }
     try {
-      const parsed = JSON.parse(readFileSync(this.file, 'utf-8')) as Partial<AutoEnableConfig>
+      const parsed = JSON.parse(readFileSync(this.file, 'utf-8')) as Partial<DebuggerConfig>
       this.current = {
-        ...defaultConfig(),
-        ...parsed,
-        rules: { ...defaultConfig().rules, ...parsed.rules },
-        skills: parsed.skills ?? [],
-        skillsLog: parsed.skillsLog ?? [],
-        usage: parsed.usage ?? {},
-        hidden: parsed.hidden ?? {},
+        version: 1,
         debug: { ...defaultConfig().debug, ...parsed.debug },
       }
     } catch {
@@ -203,5 +138,18 @@ export class ConfigStore {
   flush(): void {
     this.lastWritten = JSON.stringify(this.current, null, 2)
     atomicFlush(this.file, this.current)
+  }
+
+  /**
+   * 设置全局调试开关并立即落盘。
+   *
+   * `/debugger on|off` 指令与 headless pre-step 兜底的**唯一写入口**：先更新内存
+   * `current`（同进程拦截判定即时读取生效），再 flush 写盘（跨重启保持）。flush
+   * 记录的 lastWritten 与 watch 回调比对一致 → 判定"自己的写入"跳过 reload，
+   * 不会丢弃本轮变更。
+   */
+  setDebugEnabled(enabled: boolean): void {
+    this.current = { ...this.current, debug: { ...this.current.debug, enabled } }
+    this.flush()
   }
 }
